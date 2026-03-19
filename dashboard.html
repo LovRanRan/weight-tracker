@@ -95,26 +95,26 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">
       <div class="form-group">
         <label>性别</label>
-        <select id="tdeeGender" onchange="calcTDEE()">
+        <select id="tdeeGender" onchange="handleTDEEInputChange()">
           <option value="male">男</option>
           <option value="female">女</option>
         </select>
       </div>
       <div class="form-group">
         <label>年龄（岁）</label>
-        <input type="number" id="tdeeAge" placeholder="25" min="10" max="100" oninput="calcTDEE()">
+        <input type="number" id="tdeeAge" placeholder="25" min="10" max="100" oninput="handleTDEEInputChange()">
       </div>
       <div class="form-group">
         <label>身高（cm）</label>
-        <input type="number" id="tdeeHeight" placeholder="170" min="100" max="250" oninput="calcTDEE()">
+        <input type="number" id="tdeeHeight" placeholder="170" min="100" max="250" oninput="handleTDEEInputChange()">
       </div>
       <div class="form-group">
         <label>体重（kg）</label>
-        <input type="number" id="tdeeWeight" placeholder="自动读取" min="30" max="300" step="0.1" oninput="calcTDEE()">
+        <input type="number" id="tdeeWeight" placeholder="自动读取" min="30" max="300" step="0.1" oninput="handleTDEEInputChange()">
       </div>
       <div class="form-group" style="grid-column:span 2">
         <label>日常活动量</label>
-        <select id="tdeeActivity" onchange="calcTDEE()">
+        <select id="tdeeActivity" onchange="handleTDEEInputChange()">
           <option value="1.2">🪑 久坐（几乎不运动）</option>
           <option value="1.375">🚶 轻度（每周 1-3 次）</option>
           <option value="1.55" selected>🏃 中度（每周 3-5 次）</option>
@@ -124,12 +124,19 @@
       </div>
       <div class="form-group" style="grid-column:span 2">
         <label>目标</label>
-        <select id="tdeeGoal" onchange="calcTDEE()">
+        <select id="tdeeGoal" onchange="handleTDEEInputChange()">
           <option value="fast_loss">🏋️ 快速减脂（缺口 -500 kcal）</option>
           <option value="loss" selected>🥗 稳健减脂（缺口 -300 kcal）</option>
           <option value="maintain">⚖️ 维持体重</option>
           <option value="gain">💪 增肌增重（盈余 +200 kcal）</option>
         </select>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-primary" onclick="confirmTDEE()">确认估算</button>
+      <div id="tdeePendingNote" style="font-size:12px;color:var(--text-muted);line-height:1.5">
+        填写完整资料后，点击“确认估算”生成每日建议摄入量
       </div>
     </div>
 
@@ -139,6 +146,14 @@
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">建议每日摄入热量</div>
         <div style="font-size:42px;font-weight:800;color:var(--primary);line-height:1" id="tdeeTarget">—</div>
         <div style="font-size:14px;color:var(--text-muted);margin-top:4px">kcal / 天</div>
+      </div>
+
+      <div style="background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px;text-align:center;font-size:13px;color:#2d3748;line-height:1.7">
+        每日建议摄入：
+        <strong id="tdeeSummaryKcal">—</strong> kcal
+        · 蛋白质 <strong id="tdeeSummaryProtein">—</strong>g
+        · 碳水 <strong id="tdeeSummaryCarb">—</strong>g
+        · 脂肪 <strong id="tdeeSummaryFat">—</strong>g
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
@@ -267,7 +282,6 @@ function renderAll() {
   renderStats();
   loadGoals();
   loadTDEEProfile();
-  calcTDEE();
   renderChart();
   renderTodayWorkouts();
 }
@@ -361,9 +375,49 @@ function loadTDEEProfile() {
     document.getElementById('tdeeWeight').value =
       (weights.length ? weights[weights.length-1].value : '');
   }
+  document.getElementById('tdeeResult').style.display = 'none';
+  document.getElementById('tdeeSaveMsg').style.display = 'none';
+  document.getElementById('tdeeSyncMsg').style.display = 'none';
+  window._tdeeLatest = null;
+  updateTDEEPendingNote(
+    hasTDEERequiredInputs()
+      ? '已载入当前参数，点击“确认估算”查看每天建议摄入的热量和三大营养素'
+      : '填写完整资料后，点击“确认估算”生成每日建议摄入量'
+  );
 }
 
-function calcTDEE() {
+function hasTDEERequiredInputs() {
+  return !!(
+    parseFloat(document.getElementById('tdeeAge').value) &&
+    parseFloat(document.getElementById('tdeeHeight').value) &&
+    parseFloat(document.getElementById('tdeeWeight').value)
+  );
+}
+
+function updateTDEEPendingNote(text, tone = 'normal') {
+  const el = document.getElementById('tdeePendingNote');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color =
+    tone === 'success' ? 'var(--primary)' :
+    tone === 'warning' ? '#b7791f' :
+    'var(--text-muted)';
+}
+
+function handleTDEEInputChange() {
+  document.getElementById('tdeeResult').style.display = 'none';
+  document.getElementById('tdeeSaveMsg').style.display = 'none';
+  document.getElementById('tdeeSyncMsg').style.display = 'none';
+  window._tdeeLatest = null;
+
+  updateTDEEPendingNote(
+    hasTDEERequiredInputs()
+      ? '参数已修改，请点击“确认估算”更新每日热量与蛋白质 / 碳水 / 脂肪建议'
+      : '请先填写完整的年龄、身高和体重，再点击“确认估算”'
+  );
+}
+
+function getTDEEData() {
   const gender   = document.getElementById('tdeeGender').value;
   const age      = parseFloat(document.getElementById('tdeeAge').value);
   const height   = parseFloat(document.getElementById('tdeeHeight').value);
@@ -372,8 +426,7 @@ function calcTDEE() {
   const goal     = document.getElementById('tdeeGoal').value;
 
   if (!age || !height || !weight) {
-    document.getElementById('tdeeResult').style.display = 'none';
-    return;
+    return null;
   }
 
   const bmr = gender === 'male'
@@ -388,22 +441,49 @@ function calcTDEE() {
   const fatG    = Math.round((target * cfg.fatPct) / 9);
   const carbG   = Math.max(0, Math.round((target - protein * 4 - fatG * 9) / 4));
 
+  return { gender, age, height, weight, activity, goal, bmr, tdee, target, protein, carb: carbG, fat: fatG, delta: cfg.delta };
+}
+
+function renderTDEE(data) {
+  const { goal, bmr, tdee, target, protein, carb, fat, delta } = data;
+
   document.getElementById('tdeeResult').style.display = 'block';
   document.getElementById('tdeeTarget').textContent   = target;
+  document.getElementById('tdeeSummaryKcal').textContent = target;
+  document.getElementById('tdeeSummaryProtein').textContent = protein;
+  document.getElementById('tdeeSummaryCarb').textContent = carb;
+  document.getElementById('tdeeSummaryFat').textContent = fat;
   document.getElementById('tdeeBMR').textContent      = bmr;
   document.getElementById('tdeeTDEE').textContent     = tdee;
-  document.getElementById('tdeeDelta').textContent    = (cfg.delta >= 0 ? '+' : '') + cfg.delta;
+  document.getElementById('tdeeDelta').textContent    = (delta >= 0 ? '+' : '') + delta;
   document.getElementById('macroProtein').textContent = protein + 'g';
-  document.getElementById('macroCarb').textContent    = carbG + 'g';
-  document.getElementById('macroFat').textContent     = fatG + 'g';
+  document.getElementById('macroCarb').textContent    = carb + 'g';
+  document.getElementById('macroFat').textContent     = fat + 'g';
   document.getElementById('tdeeNote').textContent     = TDEE_NOTES[goal];
   document.getElementById('tdeeSaveMsg').style.display = 'none';
   document.getElementById('tdeeSyncMsg').style.display = 'none';
 
-  window._tdeeLatest = { kcal: target, protein, carb: carbG, fat: fatG };
+  window._tdeeLatest = { kcal: target, protein, carb, fat };
+}
+
+function confirmTDEE() {
+  const data = getTDEEData();
+  if (!data) {
+    updateTDEEPendingNote('请先填写完整的年龄、身高和体重，再点击“确认估算”', 'warning');
+    alert('请先填写完整的年龄、身高和体重');
+    return;
+  }
+
+  renderTDEE(data);
+  updateTDEEPendingNote('已确认当前参数，下面是你每天建议摄入的热量和三大营养素', 'success');
 }
 
 async function saveTDEEProfile() {
+  if (!window._tdeeLatest) {
+    alert('请先点击“确认估算”');
+    return;
+  }
+
   const gender   = document.getElementById('tdeeGender').value;
   const age      = parseFloat(document.getElementById('tdeeAge').value);
   const height   = parseFloat(document.getElementById('tdeeHeight').value);
@@ -427,7 +507,7 @@ async function saveTDEEProfile() {
 }
 
 async function syncTDEEToGoals() {
-  if (!window._tdeeLatest) { alert('请先填写身体数据'); return; }
+  if (!window._tdeeLatest) { alert('请先点击“确认估算”'); return; }
   const { kcal, protein, carb, fat } = window._tdeeLatest;
   try {
     await saveProfile({

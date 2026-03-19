@@ -115,41 +115,86 @@ const EXERCISE_DB = [
 // ===== 饮食计划模板 =====
 const MEAL_TEMPLATES = [
   {
-    name: '🥗 减脂轻食日', kcal: 1400, protein: 120, carb: 130, fat: 40,
+    name: '🥗 减脂轻食日',
+    desc: '高蛋白控卡，适合日常减脂期直接套用',
     meals: {
-      '早餐':    [{name:'燕麦粥',kcal:150,protein:5,carb:28,fat:3},{name:'水煮蛋×2',kcal:140,protein:12,carb:1,fat:10},{name:'脱脂牛奶250ml',kcal:85,protein:8,carb:10,fat:0}],
-      '午餐':    [{name:'鸡胸肉150g',kcal:165,protein:31,carb:0,fat:4},{name:'糙米饭100g',kcal:110,protein:3,carb:23,fat:1},{name:'西兰花炒蔬菜',kcal:80,protein:4,carb:12,fat:2}],
-      '下午加餐':[{name:'希腊酸奶',kcal:100,protein:10,carb:6,fat:3}],
-      '晚餐':    [{name:'清蒸鱼200g',kcal:180,protein:36,carb:0,fat:4},{name:'凉拌蔬菜沙拉',kcal:70,protein:2,carb:10,fat:3},{name:'杂粮馒头1个',kcal:120,protein:4,carb:25,fat:1}],
+      '早餐':    [{name:'希腊酸奶燕麦杯',kcal:220,protein:18,carb:28,fat:6},{name:'水煮蛋×2',kcal:140,protein:12,carb:1,fat:10},{name:'蓝莓100g',kcal:57,protein:1,carb:14,fat:0}],
+      '午餐':    [{name:'香煎鸡胸肉180g',kcal:240,protein:40,carb:0,fat:5},{name:'糙米饭120g',kcal:130,protein:3,carb:28,fat:1},{name:'西兰花胡萝卜',kcal:90,protein:4,carb:12,fat:3}],
+      '下午加餐':[{name:'乳清蛋白1份',kcal:120,protein:24,carb:3,fat:2}],
+      '晚餐':    [{name:'清蒸鳕鱼180g',kcal:190,protein:38,carb:0,fat:3},{name:'烤南瓜150g',kcal:90,protein:2,carb:20,fat:0},{name:'生菜番茄沙拉',kcal:60,protein:2,carb:8,fat:2}],
     }
   },
   {
-    name: '💪 增肌高蛋白日', kcal: 2000, protein: 180, carb: 200, fat: 60,
+    name: '💪 增肌高蛋白日',
+    desc: '提高蛋白和主食摄入，适合力量训练日',
     meals: {
-      '早餐':    [{name:'全蛋炒蛋×3',kcal:210,protein:18,carb:1,fat:15},{name:'全麦吐司×2',kcal:160,protein:6,carb:30,fat:2},{name:'牛奶250ml',kcal:160,protein:8,carb:12,fat:8}],
+      '早餐':    [{name:'全蛋炒蛋×3',kcal:210,protein:18,carb:2,fat:15},{name:'全麦吐司×2',kcal:160,protein:6,carb:30,fat:2},{name:'牛奶250ml',kcal:150,protein:8,carb:12,fat:8}],
       '上午加餐':[{name:'乳清蛋白粉',kcal:120,protein:25,carb:3,fat:1},{name:'香蕉1根',kcal:90,protein:1,carb:22,fat:0}],
-      '午餐':    [{name:'牛肉200g',kcal:280,protein:40,carb:0,fat:13},{name:'米饭150g',kcal:165,protein:3,carb:36,fat:0},{name:'炒时蔬',kcal:80,protein:3,carb:12,fat:2}],
-      '下午加餐':[{name:'坚果一把',kcal:180,protein:5,carb:6,fat:16},{name:'苹果1个',kcal:80,protein:0,carb:20,fat:0}],
-      '晚餐':    [{name:'三文鱼200g',kcal:280,protein:36,carb:0,fat:15},{name:'藜麦100g',kcal:120,protein:4,carb:22,fat:2},{name:'混合蔬菜',kcal:75,protein:3,carb:14,fat:1}],
+      '午餐':    [{name:'牛肉200g',kcal:280,protein:40,carb:0,fat:13},{name:'米饭150g',kcal:174,protein:4,carb:38,fat:1},{name:'炒西兰花',kcal:80,protein:4,carb:10,fat:3}],
+      '下午加餐':[{name:'希腊酸奶150g',kcal:145,protein:15,carb:9,fat:6},{name:'坚果一小把',kcal:120,protein:4,carb:4,fat:10}],
+      '晚餐':    [{name:'三文鱼180g',kcal:250,protein:32,carb:0,fat:14},{name:'藜麦100g',kcal:120,protein:4,carb:22,fat:2},{name:'混合蔬菜',kcal:100,protein:4,carb:14,fat:2}],
     }
   },
   {
-    name: '🌿 低碳生酮日', kcal: 1600, protein: 120, carb: 50, fat: 110,
+    name: '🌿 低碳生酮日',
+    desc: '减少主食摄入，适合阶段性低碳安排',
     meals: {
-      '早餐':    [{name:'荷包蛋×2',kcal:140,protein:12,carb:1,fat:10},{name:'牛油果半个',kcal:120,protein:2,carb:7,fat:11},{name:'无糖黑咖啡',kcal:5,protein:0,carb:1,fat:0}],
-      '午餐':    [{name:'鸡腿肉200g',kcal:280,protein:30,carb:0,fat:17},{name:'花椰菜饭',kcal:50,protein:3,carb:8,fat:0},{name:'橄榄油炒菜',kcal:120,protein:1,carb:5,fat:12}],
-      '下午加餐':[{name:'奶酪30g',kcal:110,protein:7,carb:1,fat:9},{name:'坚果一把',kcal:180,protein:5,carb:6,fat:16}],
-      '晚餐':    [{name:'猪里脊180g',kcal:250,protein:32,carb:0,fat:13},{name:'炒绿叶蔬菜',kcal:70,protein:3,carb:8,fat:3},{name:'芝麻油调味',kcal:60,protein:0,carb:0,fat:7}],
+      '早餐':    [{name:'荷包蛋×2',kcal:140,protein:12,carb:1,fat:10},{name:'牛油果半个',kcal:120,protein:2,carb:7,fat:11},{name:'希腊酸奶150g',kcal:145,protein:15,carb:9,fat:6}],
+      '午餐':    [{name:'煎鸡腿排200g',kcal:320,protein:32,carb:0,fat:20},{name:'牛油果蔬菜沙拉',kcal:120,protein:3,carb:8,fat:10},{name:'橄榄油蘑菇',kcal:110,protein:3,carb:6,fat:9}],
+      '下午加餐':[{name:'奶酪30g',kcal:120,protein:7,carb:1,fat:10},{name:'杏仁20g',kcal:120,protein:4,carb:4,fat:10}],
+      '晚餐':    [{name:'猪里脊180g',kcal:250,protein:32,carb:0,fat:13},{name:'蒜香西兰花',kcal:80,protein:4,carb:10,fat:3},{name:'嫩豆腐150g',kcal:100,protein:11,carb:3,fat:5}],
     }
   },
   {
-    name: '🌾 均衡饮食日', kcal: 1800, protein: 100, carb: 220, fat: 65,
+    name: '🌾 均衡饮食日',
+    desc: '三餐稳定不激进，适合长期坚持',
     meals: {
-      '早餐':    [{name:'杂粮粥',kcal:180,protein:5,carb:38,fat:1},{name:'煮鸡蛋×1',kcal:70,protein:6,carb:1,fat:5},{name:'豆浆250ml',kcal:90,protein:7,carb:9,fat:3}],
+      '早餐':    [{name:'杂粮粥',kcal:180,protein:5,carb:38,fat:1},{name:'煮鸡蛋×2',kcal:140,protein:12,carb:2,fat:10},{name:'豆浆250ml',kcal:90,protein:7,carb:9,fat:3}],
       '上午加餐':[{name:'苹果1个',kcal:80,protein:0,carb:20,fat:0}],
-      '午餐':    [{name:'去皮鸡肉150g',kcal:165,protein:31,carb:0,fat:4},{name:'米饭100g',kcal:110,protein:2,carb:24,fat:0},{name:'番茄炒蛋',kcal:150,protein:8,carb:10,fat:9},{name:'冬瓜汤',kcal:30,protein:1,carb:6,fat:0}],
+      '午餐':    [{name:'去皮鸡腿肉150g',kcal:230,protein:32,carb:0,fat:9},{name:'米饭150g',kcal:174,protein:4,carb:38,fat:1},{name:'番茄炒蛋',kcal:160,protein:9,carb:10,fat:10},{name:'冬瓜汤',kcal:30,protein:1,carb:6,fat:0}],
       '下午加餐':[{name:'低脂酸奶',kcal:100,protein:8,carb:12,fat:2}],
-      '晚餐':    [{name:'虾仁150g',kcal:130,protein:26,carb:1,fat:2},{name:'杂粮馒头×1',kcal:120,protein:4,carb:25,fat:1},{name:'凉拌黄瓜',kcal:30,protein:1,carb:6,fat:0},{name:'紫菜蛋花汤',kcal:50,protein:4,carb:4,fat:2}],
+      '晚餐':    [{name:'虾仁150g',kcal:130,protein:26,carb:1,fat:2},{name:'杂粮馒头×1',kcal:120,protein:4,carb:25,fat:1},{name:'清炒时蔬',kcal:80,protein:3,carb:10,fat:3},{name:'紫菜蛋花汤',kcal:50,protein:4,carb:4,fat:2}],
+    }
+  },
+  {
+    name: '🍱 上班便当日',
+    desc: '备餐友好，带饭和提前准备都很顺手',
+    meals: {
+      '早餐':    [{name:'隔夜燕麦杯',kcal:280,protein:15,carb:38,fat:8},{name:'水煮蛋×2',kcal:140,protein:12,carb:1,fat:10}],
+      '午餐':    [{name:'便当鸡胸肉160g',kcal:220,protein:36,carb:0,fat:5},{name:'紫米饭120g',kcal:150,protein:4,carb:32,fat:1},{name:'彩椒西兰花',kcal:90,protein:4,carb:12,fat:3}],
+      '下午加餐':[{name:'无糖酸奶200g',kcal:120,protein:12,carb:10,fat:2},{name:'香蕉1根',kcal:90,protein:1,carb:23,fat:0}],
+      '晚餐':    [{name:'牛肉土豆便当',kcal:360,protein:28,carb:28,fat:14},{name:'凉拌黄瓜',kcal:30,protein:1,carb:6,fat:0},{name:'玉米100g',kcal:86,protein:3,carb:19,fat:1}],
+    }
+  },
+  {
+    name: '🥬 素食高纤日',
+    desc: '豆制品和全谷物为主，清爽但有饱腹感',
+    meals: {
+      '早餐':    [{name:'无糖豆浆300ml',kcal:110,protein:10,carb:8,fat:4},{name:'全麦面包3片',kcal:220,protein:9,carb:40,fat:3},{name:'花生酱20g',kcal:118,protein:5,carb:4,fat:10}],
+      '午餐':    [{name:'香煎豆腐200g',kcal:210,protein:18,carb:8,fat:12},{name:'藜麦150g',kcal:180,protein:6,carb:33,fat:3},{name:'西兰花蘑菇',kcal:90,protein:6,carb:14,fat:2}],
+      '下午加餐':[{name:'希腊酸奶200g',kcal:194,protein:20,carb:12,fat:8},{name:'蓝莓100g',kcal:57,protein:1,carb:14,fat:0}],
+      '晚餐':    [{name:'毛豆150g',kcal:180,protein:17,carb:14,fat:8},{name:'全麦意面150g',kcal:230,protein:9,carb:43,fat:2},{name:'番茄蔬菜酱',kcal:90,protein:3,carb:14,fat:3}],
+    }
+  },
+  {
+    name: '🏃 训练恢复日',
+    desc: '补碳补蛋白，适合跑步或力量训练后',
+    meals: {
+      '早餐':    [{name:'燕麦牛奶杯',kcal:300,protein:16,carb:50,fat:6},{name:'鸡蛋×2',kcal:140,protein:12,carb:2,fat:10},{name:'香蕉1根',kcal:90,protein:1,carb:23,fat:0}],
+      '上午加餐':[{name:'乳清蛋白1份',kcal:120,protein:24,carb:3,fat:2}],
+      '午餐':    [{name:'鸡胸肉180g',kcal:240,protein:42,carb:0,fat:5},{name:'米饭200g',kcal:232,protein:5,carb:51,fat:1},{name:'西兰花',kcal:60,protein:3,carb:10,fat:1}],
+      '下午加餐':[{name:'希腊酸奶200g',kcal:194,protein:20,carb:12,fat:8},{name:'蓝莓100g',kcal:57,protein:1,carb:14,fat:0}],
+      '晚餐':    [{name:'三文鱼180g',kcal:250,protein:32,carb:0,fat:14},{name:'红薯250g',kcal:215,protein:4,carb:50,fat:0},{name:'菠菜蘑菇',kcal:70,protein:4,carb:9,fat:2}],
+    }
+  },
+  {
+    name: '🍜 外卖控卡日',
+    desc: '用常见外卖组合控热量，忙的时候也能照抄',
+    meals: {
+      '早餐':    [{name:'茶叶蛋×2',kcal:150,protein:12,carb:2,fat:10},{name:'无糖豆浆300ml',kcal:110,protein:10,carb:8,fat:4},{name:'全麦三明治1份',kcal:280,protein:16,carb:28,fat:10}],
+      '午餐':    [{name:'黄焖鸡米饭(控量版)',kcal:520,protein:32,carb:52,fat:18},{name:'凉拌海带丝',kcal:40,protein:2,carb:6,fat:1}],
+      '下午加餐':[{name:'低糖酸奶1杯',kcal:120,protein:10,carb:12,fat:3}],
+      '晚餐':    [{name:'Poke饭(半饭版)',kcal:480,protein:30,carb:45,fat:18},{name:'味噌汤',kcal:40,protein:3,carb:4,fat:1}],
     }
   }
 ];

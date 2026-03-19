@@ -81,6 +81,7 @@ let profile   = null;
 let activeDay = null;
 
 const MEALS = ['早餐','午餐','晚餐','加餐'];
+const TEMPLATE_MEAL_ALIASES = { '上午加餐':'加餐', '下午加餐':'加餐' };
 
 // ===== 日期工具 =====
 function getWeekDates() {
@@ -122,23 +123,72 @@ function todayStr() { return new Date().toISOString().split('T')[0]; }
 // ===== 模板卡片 =====
 function renderTemplates() {
   const el = document.getElementById('templateList');
-  el.innerHTML = MEAL_TEMPLATES.map((tpl, i) => `
-    <div class="template-card" onclick="applyTemplate(${i})">
-      <div class="template-name">${tpl.name}</div>
-      <div class="template-desc">${tpl.desc || summarizeTemplate(tpl)}</div>
-    </div>
-  `).join('');
+  el.innerHTML = MEAL_TEMPLATES.map((tpl, i) => {
+    const stats = getTemplateStats(tpl);
+    return `
+      <div class="template-card" onclick="applyTemplate(${i})">
+        <div class="template-head">
+          <div class="template-name">${tpl.name}</div>
+          <div class="template-kcal">${stats.kcal} kcal</div>
+        </div>
+        <div class="template-desc">${tpl.desc || summarizeTemplate(tpl)}</div>
+        <div class="template-meta">
+          <span>${stats.mealCount} 餐</span>
+          <span>P ${stats.protein}g</span>
+          <span>C ${stats.carb}g</span>
+          <span>F ${stats.fat}g</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function summarizeTemplate(tpl) {
-  const total = MEALS.reduce((sum, m) =>
-    sum + (tpl[m] || []).reduce((s, f) => s + (f.kcal || 0), 0), 0);
-  return `约 ${total} kcal / 天`;
+  const stats = getTemplateStats(tpl);
+  return `约 ${stats.kcal} kcal / 天，适合直接套用`;
+}
+
+function getTemplateMeals(tpl) {
+  const source = tpl.meals || Object.fromEntries(
+    Object.entries(tpl).filter(([, value]) => Array.isArray(value))
+  );
+  const normalized = {};
+
+  Object.entries(source).forEach(([meal, foods]) => {
+    const normalizedMeal = TEMPLATE_MEAL_ALIASES[meal] || meal;
+    if (!normalized[normalizedMeal]) normalized[normalizedMeal] = [];
+    normalized[normalizedMeal].push(...(foods || []));
+  });
+
+  return normalized;
+}
+
+function getTemplateStats(tpl) {
+  const meals = getTemplateMeals(tpl);
+  const stats = { kcal: 0, protein: 0, carb: 0, fat: 0, mealCount: 0 };
+
+  Object.values(meals).forEach(foods => {
+    if (!foods || !foods.length) return;
+    stats.mealCount += 1;
+    foods.forEach(f => {
+      stats.kcal += Number(f.kcal) || 0;
+      stats.protein += Number(f.protein) || 0;
+      stats.carb += Number(f.carb) || 0;
+      stats.fat += Number(f.fat) || 0;
+    });
+  });
+
+  stats.kcal = Math.round(stats.kcal);
+  stats.protein = Math.round(stats.protein);
+  stats.carb = Math.round(stats.carb);
+  stats.fat = Math.round(stats.fat);
+  return stats;
 }
 
 // ===== 应用模板到当前选中日 =====
 async function applyTemplate(idx) {
   const tpl = MEAL_TEMPLATES[idx];
+  const meals = getTemplateMeals(tpl);
   if (!tpl) return;
   if (!activeDay) { alert('请先在下方选择一天'); return; }
 
@@ -150,7 +200,7 @@ async function applyTemplate(idx) {
     // 构建批量插入的行
     const rows = [];
     MEALS.forEach(m => {
-      (tpl[m] || []).forEach(f => {
+      (meals[m] || []).forEach(f => {
         rows.push({
           date: activeDay,
           meal_name: m,
@@ -348,8 +398,15 @@ async function handleSaveGoals() {
   cursor: pointer; transition: all .15s; background: #fafafa;
 }
 .template-card:hover { border-color: var(--primary); background: rgba(76,175,130,0.05); transform: translateY(-1px); }
-.template-name { font-size: 14px; font-weight: 700; color: #2d3748; margin-bottom: 4px; }
-.template-desc { font-size: 12px; color: #718096; }
+.template-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.template-name { font-size: 14px; font-weight: 700; color: #2d3748; }
+.template-kcal { font-size: 13px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+.template-desc { font-size: 12px; color: #718096; min-height: 34px; line-height: 1.45; }
+.template-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.template-meta span {
+  font-size: 11px; color: #4a5568; background: #edf2f7;
+  padding: 4px 8px; border-radius: 999px;
+}
 
 .week-tabs { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; }
 .day-tab {
