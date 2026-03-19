@@ -25,16 +25,12 @@ function mapExternalCacheRowToFood(row) {
     name: row.fatsecret_food_name,
     cat: '外部',
     external: true,
-    sourceType: 'fatsecret_cache',
-    sourceLabel: 'FatSecret 缓存',
+    sourceType: 'usda_cache',
+    sourceLabel: 'USDA 缓存',
     per100,
-    fatsecret: {
-      foodId: row.fatsecret_food_id,
-      servingId: row.fatsecret_serving_id || '',
-      servingDescription: row.serving_description || '',
-      servingGrams: row.serving_grams ? parseFloat(row.serving_grams) : null,
-      region: row.locale_region || 'US',
-      language: row.locale_language || 'en',
+    usda: {
+      fdcId: row.fatsecret_food_id,
+      dataType: row.serving_description || '',
       cachedAt: row.cached_at,
       expiresAt: row.expires_at
     }
@@ -360,7 +356,7 @@ async function getExternalFoodMatchByName(normalizedName, localeRegion = 'US', l
     .from('external_food_matches')
     .select('*')
     .eq('user_id', currentUser.id)
-    .eq('source', 'fatsecret')
+    .eq('source', 'usda')
     .eq('normalized_name', normalizedName)
     .eq('locale_region', localeRegion)
     .eq('locale_language', localeLanguage)
@@ -375,7 +371,7 @@ async function getExternalFoodCacheByIds(foodId, servingId = '', localeRegion = 
     .from('external_food_cache')
     .select('*')
     .eq('user_id', currentUser.id)
-    .eq('source', 'fatsecret')
+    .eq('source', 'usda')
     .eq('fatsecret_food_id', String(foodId))
     .eq('fatsecret_serving_id', String(servingId || ''))
     .eq('locale_region', localeRegion)
@@ -391,7 +387,7 @@ async function saveExternalFoodMatch(payload) {
     user_id: currentUser.id,
     normalized_name: normalizeFoodLookupName(payload.normalized_name),
     original_name: payload.original_name || payload.normalized_name,
-    source: payload.source || 'fatsecret',
+    source: payload.source || 'usda',
     fatsecret_food_id: String(payload.fatsecret_food_id),
     fatsecret_serving_id: String(payload.fatsecret_serving_id || ''),
     fatsecret_food_name: payload.fatsecret_food_name,
@@ -411,7 +407,7 @@ async function saveExternalFoodMatch(payload) {
 async function saveExternalFoodCache(payload) {
   const row = {
     user_id: currentUser.id,
-    source: payload.source || 'fatsecret',
+    source: payload.source || 'usda',
     fatsecret_food_id: String(payload.fatsecret_food_id),
     fatsecret_serving_id: String(payload.fatsecret_serving_id || ''),
     fatsecret_food_name: payload.fatsecret_food_name,

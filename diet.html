@@ -193,9 +193,9 @@
 
     <div class="no-result-hint" id="noResultHint">
       <div>🔍 本地食物库没找到「<span id="noResultQuery"></span>」</div>
-      <div class="no-result-subtext" id="noResultSubtext">可以先查 FatSecret；如果仍然没有，再手动录入到你的自定义食物库。</div>
+      <div class="no-result-subtext" id="noResultSubtext">可以先查 USDA；如果仍然没有，再手动录入到你的自定义食物库。</div>
       <div class="no-result-actions">
-        <button type="button" class="btn btn-primary btn-sm" id="fatsecretLookupBtn" onclick="searchFatSecretFromHint(event)">查 FatSecret</button>
+        <button type="button" class="btn btn-primary btn-sm" id="usdaLookupBtn" onclick="searchUsdaFromHint(event)">查 USDA</button>
         <button type="button" class="btn btn-secondary btn-sm" onclick="openCustomForm()">手动录入</button>
       </div>
     </div>
@@ -326,9 +326,9 @@ let aiFollowupAnswers = {};
 
 const mealOrder = ['早餐','午餐','晚餐','加餐'];
 const mealEmoji = { '早餐':'🌅','午餐':'☀️','晚餐':'🌙','加餐':'🍎' };
-const FATSECRET_FUNCTION_URL = '/.netlify/functions/fatsecret-search';
-const FATSECRET_DEFAULT_REGION = 'US';
-const FATSECRET_DEFAULT_LANGUAGE = 'en';
+const USDA_FUNCTION_URL = '/.netlify/functions/usda-search';
+const USDA_DEFAULT_REGION = 'US';
+const USDA_DEFAULT_LANGUAGE = 'en';
 const AI_STARCH_FOODS = new Set(['白米饭','糙米饭','燕麦片','面条(熟)','藜麦(熟)','粉丝(熟)','玉米','红薯','土豆']);
 const AI_RICH_FOODS = new Set(['午餐肉','肥牛卷','牛肉丸','天妇罗','炸豆腐','鱼豆腐','豆皮','腐竹','奶酪(切达)','橄榄油','黄油','牛油果']);
 const AI_ALIAS_RULES = [
@@ -460,7 +460,7 @@ function cleanLookupText(text = '') {
 function uniqueFoods(foods = []) {
   const seen = new Set();
   return foods.filter(food => {
-    const key = normalizeFoodToken(food.name) || `external:${food.fatsecret?.foodId || food.id || ''}:${food.fatsecret?.servingId || ''}`;
+    const key = normalizeFoodToken(food.name) || `external:${food.usda?.fdcId || food.id || ''}`;
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -487,8 +487,8 @@ function getFoodsForMatching() {
 function getFoodSourceBadgeHtml(food) {
   if (food?.custom) return ' <span class="custom-badge">自定义</span>';
   if (food?.external) {
-    const cacheClass = food.sourceType === 'fatsecret_cache' ? ' cache' : '';
-    const label = food.sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret';
+    const cacheClass = food.sourceType === 'usda_cache' ? ' cache' : '';
+    const label = food.sourceType === 'usda_cache' ? 'USDA 缓存' : 'USDA';
     return ` <span class="food-source-chip${cacheClass}">${label}</span>`;
   }
   return '';
@@ -506,32 +506,28 @@ function inferExternalFoodCategory(name, per100) {
   return '其他';
 }
 
-function mapFatSecretFoodPayload(payload, sourceType = 'fatsecret_live') {
+function mapUsdaFoodPayload(payload, sourceType = 'usda_live') {
   if (!payload?.name || !payload?.per100) return null;
   return {
-    id: `fatsecret:${payload.fatsecret?.foodId || payload.foodId || payload.name}:${payload.fatsecret?.servingId || payload.servingId || ''}`,
+    id: `usda:${payload.usda?.fdcId || payload.fdcId || payload.name}`,
     name: payload.name,
     cat: payload.cat || inferExternalFoodCategory(payload.name, payload.per100),
     external: true,
-    externalPending: sourceType === 'fatsecret_live',
+    externalPending: sourceType === 'usda_live',
     sourceType,
-    sourceLabel: sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret',
+    sourceLabel: sourceType === 'usda_cache' ? 'USDA 缓存' : 'USDA',
     per100: {
       kcal: Math.round(payload.per100.kcal || 0),
       protein: round1(payload.per100.protein || 0),
       carb: round1(payload.per100.carb || 0),
       fat: round1(payload.per100.fat || 0)
     },
-    fatsecret: {
-      foodId: String(payload.fatsecret?.foodId || payload.foodId || ''),
-      servingId: String(payload.fatsecret?.servingId || payload.servingId || ''),
-      foodName: payload.fatsecret?.foodName || payload.foodName || payload.name,
-      brandName: payload.fatsecret?.brandName || payload.brandName || '',
-      foodType: payload.fatsecret?.foodType || payload.foodType || '',
-      servingDescription: payload.fatsecret?.servingDescription || payload.servingDescription || '',
-      servingGrams: payload.fatsecret?.servingGrams == null ? null : Number(payload.fatsecret.servingGrams || payload.servingGrams || 0),
-      region: payload.fatsecret?.region || FATSECRET_DEFAULT_REGION,
-      language: payload.fatsecret?.language || FATSECRET_DEFAULT_LANGUAGE
+    usda: {
+      fdcId: String(payload.usda?.fdcId || payload.fdcId || ''),
+      dataType: payload.usda?.dataType || payload.dataType || '',
+      brandName: payload.usda?.brandName || payload.brandName || '',
+      foodCategory: payload.usda?.foodCategory || payload.foodCategory || '',
+      description: payload.usda?.description || payload.description || ''
     }
   };
 }
@@ -541,8 +537,7 @@ function upsertExternalFoodLocal(food) {
   externalFoods = [
     food,
     ...externalFoods.filter(item => {
-      const sameKey = item.fatsecret?.foodId === food.fatsecret?.foodId
-        && (item.fatsecret?.servingId || '') === (food.fatsecret?.servingId || '');
+      const sameKey = item.usda?.fdcId && food.usda?.fdcId && item.usda.fdcId === food.usda.fdcId;
       const sameName = normalizeFoodToken(item.name) === normalizeFoodToken(food.name);
       return !sameKey && !sameName;
     })
@@ -550,42 +545,42 @@ function upsertExternalFoodLocal(food) {
   return food;
 }
 
-async function callFatSecretLookup(params) {
+async function callUsdaLookup(params) {
   const query = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value != null && value !== '') query.set(key, value);
   });
-  const resp = await fetch(`${FATSECRET_FUNCTION_URL}?${query.toString()}`);
+  const resp = await fetch(`${USDA_FUNCTION_URL}?${query.toString()}`);
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || 'FatSecret 查询失败');
+  if (!resp.ok) throw new Error(data.error || 'USDA 查询失败');
   return data;
 }
 
-async function searchFatSecretFoods(query) {
+async function searchUsdaFoods(query) {
   const cleaned = cleanLookupText(query);
   if (!cleaned) return [];
-  const data = await callFatSecretLookup({ q: cleaned });
-  return uniqueFoods((data.foods || []).map(item => mapFatSecretFoodPayload(item, 'fatsecret_live')).filter(Boolean));
+  const data = await callUsdaLookup({ q: cleaned });
+  return uniqueFoods((data.foods || []).map(item => mapUsdaFoodPayload(item, 'usda_live')).filter(Boolean));
 }
 
-async function fetchFatSecretFoodById(foodId, servingId = '') {
-  if (!foodId) return null;
-  const data = await callFatSecretLookup({ foodId, servingId });
-  return data.food ? mapFatSecretFoodPayload(data.food, 'fatsecret_live') : null;
+async function fetchUsdaFoodById(fdcId) {
+  if (!fdcId) return null;
+  const data = await callUsdaLookup({ fdcId });
+  return data.food ? mapUsdaFoodPayload(data.food, 'usda_live') : null;
 }
 
 async function persistExternalFood(food, lookupName, confidence = 0.88) {
-  if (!food?.external || !food.fatsecret?.foodId) return food;
+  if (!food?.external || !food.usda?.fdcId) return food;
   const normalizedName = normalizeFoodToken(cleanLookupText(lookupName || food.name));
-  const region = food.fatsecret.region || FATSECRET_DEFAULT_REGION;
-  const language = food.fatsecret.language || FATSECRET_DEFAULT_LANGUAGE;
+  const region = USDA_DEFAULT_REGION;
+  const language = USDA_DEFAULT_LANGUAGE;
   const cachedFood = await saveExternalFoodCache({
-    source: 'fatsecret',
-    fatsecret_food_id: food.fatsecret.foodId,
-    fatsecret_serving_id: food.fatsecret.servingId || '',
+    source: 'usda',
+    fatsecret_food_id: food.usda.fdcId,
+    fatsecret_serving_id: '',
     fatsecret_food_name: food.name,
-    serving_description: food.fatsecret.servingDescription || '',
-    serving_grams: food.fatsecret.servingGrams == null ? null : food.fatsecret.servingGrams,
+    serving_description: food.usda.dataType || '',
+    serving_grams: null,
     per100_kcal: food.per100.kcal,
     per100_protein: food.per100.protein,
     per100_carb: food.per100.carb,
@@ -598,9 +593,9 @@ async function persistExternalFood(food, lookupName, confidence = 0.88) {
     await saveExternalFoodMatch({
       normalized_name: normalizedName,
       original_name: lookupName || food.name,
-      source: 'fatsecret',
-      fatsecret_food_id: food.fatsecret.foodId,
-      fatsecret_serving_id: food.fatsecret.servingId || '',
+      source: 'usda',
+      fatsecret_food_id: food.usda.fdcId,
+      fatsecret_serving_id: '',
       fatsecret_food_name: food.name,
       locale_region: region,
       locale_language: language,
@@ -608,7 +603,7 @@ async function persistExternalFood(food, lookupName, confidence = 0.88) {
     });
   }
 
-  return upsertExternalFoodLocal(cachedFood || { ...food, externalPending: false, sourceType: 'fatsecret_cache', sourceLabel: 'FatSecret 缓存' });
+  return upsertExternalFoodLocal(cachedFood || { ...food, externalPending: false, sourceType: 'usda_cache', sourceLabel: 'USDA 缓存' });
 }
 
 async function resolveFoodByPriority(name, options = {}) {
@@ -631,28 +626,27 @@ async function resolveFoodByPriority(name, options = {}) {
     if (options.allowExternal === false) return null;
 
     try {
-      const existingMatch = await getExternalFoodMatchByName(normalizedName, FATSECRET_DEFAULT_REGION, FATSECRET_DEFAULT_LANGUAGE);
+      const existingMatch = await getExternalFoodMatchByName(normalizedName, USDA_DEFAULT_REGION, USDA_DEFAULT_LANGUAGE);
       if (existingMatch) {
         const memoryHit = externalFoods.find(food =>
-          food.fatsecret?.foodId === existingMatch.fatsecret_food_id
-          && (food.fatsecret?.servingId || '') === (existingMatch.fatsecret_serving_id || '')
+          food.usda?.fdcId === existingMatch.fatsecret_food_id
         );
         if (memoryHit) {
-          return { food: memoryHit, matchedBy: 'external-memory', sourceType: memoryHit.sourceType || 'fatsecret_cache' };
+          return { food: memoryHit, matchedBy: 'external-memory', sourceType: memoryHit.sourceType || 'usda_cache' };
         }
 
         const cachedFood = await getExternalFoodCacheByIds(
           existingMatch.fatsecret_food_id,
-          existingMatch.fatsecret_serving_id || '',
-          existingMatch.locale_region || FATSECRET_DEFAULT_REGION,
-          existingMatch.locale_language || FATSECRET_DEFAULT_LANGUAGE
+          '',
+          existingMatch.locale_region || USDA_DEFAULT_REGION,
+          existingMatch.locale_language || USDA_DEFAULT_LANGUAGE
         );
         if (cachedFood) {
           upsertExternalFoodLocal(cachedFood);
-          return { food: cachedFood, matchedBy: 'external-cache', sourceType: 'fatsecret_cache' };
+          return { food: cachedFood, matchedBy: 'external-cache', sourceType: 'usda_cache' };
         }
 
-        const refreshed = await fetchFatSecretFoodById(existingMatch.fatsecret_food_id, existingMatch.fatsecret_serving_id || '');
+        const refreshed = await fetchUsdaFoodById(existingMatch.fatsecret_food_id);
         if (refreshed) {
           let saved = refreshed;
           if (options.persistExternal !== false) {
@@ -663,7 +657,7 @@ async function resolveFoodByPriority(name, options = {}) {
               saved = upsertExternalFoodLocal({ ...refreshed, externalPending: false });
             }
           }
-          return { food: saved, matchedBy: 'external-refresh', sourceType: saved.sourceType || 'fatsecret_live' };
+          return { food: saved, matchedBy: 'external-refresh', sourceType: saved.sourceType || 'usda_live' };
         }
       }
     } catch (err) {
@@ -671,7 +665,7 @@ async function resolveFoodByPriority(name, options = {}) {
     }
 
     try {
-      const results = await searchFatSecretFoods(lookupName || name);
+      const results = await searchUsdaFoods(lookupName || name);
       if (!results.length) return null;
       const best = results[0];
       let saved = best;
@@ -679,13 +673,13 @@ async function resolveFoodByPriority(name, options = {}) {
         try {
           saved = await persistExternalFood(best, options.lookupName || lookupName || name, options.matchConfidence || 0.84);
         } catch (err) {
-          console.warn('persist fatsecret food failed:', err.message);
+          console.warn('persist usda food failed:', err.message);
           saved = upsertExternalFoodLocal({ ...best, externalPending: false });
         }
       }
-      return { food: saved, matchedBy: 'fatsecret-live', sourceType: saved.sourceType || 'fatsecret_live' };
+      return { food: saved, matchedBy: 'usda-live', sourceType: saved.sourceType || 'usda_live' };
     } catch (err) {
-      if (!options.silent) console.warn('fatsecret lookup failed:', err.message);
+      if (!options.silent) console.warn('usda lookup failed:', err.message);
       return null;
     }
   })();
@@ -862,10 +856,10 @@ async function buildAiBaseEstimate(result, context) {
       ? '自定义库'
       : sourceType === 'known'
         ? '食物库'
-        : sourceType === 'fatsecret_cache'
-          ? 'FatSecret 缓存'
-          : sourceType === 'fatsecret_live'
-            ? 'FatSecret'
+        : sourceType === 'usda_cache'
+          ? 'USDA 缓存'
+          : sourceType === 'usda_live'
+            ? 'USDA'
             : 'AI估算';
     const base = matchedFood ? calcKnownFoodMacros(matchedFood, weightInfo.grams) : {
       kcal: Math.round(food.kcal || 0),
@@ -892,7 +886,7 @@ async function buildAiBaseEstimate(result, context) {
     matchedCount: items.filter(i => i.sourceType !== 'ai').length,
     customCount: items.filter(i => i.sourceType === 'custom').length,
     localCount: items.filter(i => i.sourceType === 'known').length,
-    externalCount: items.filter(i => i.sourceType === 'fatsecret_cache' || i.sourceType === 'fatsecret_live').length,
+    externalCount: items.filter(i => i.sourceType === 'usda_cache' || i.sourceType === 'usda_live').length,
     aiOnlyCount: items.filter(i => i.sourceType === 'ai').length
   };
 
@@ -959,7 +953,7 @@ function buildAiNote(baseEstimate, estimate) {
     const parts = [];
     if (baseEstimate.sourceStats.localCount) parts.push(`本地食物库 ${baseEstimate.sourceStats.localCount} 项`);
     if (baseEstimate.sourceStats.customCount) parts.push(`自定义食物 ${baseEstimate.sourceStats.customCount} 项`);
-    if (baseEstimate.sourceStats.externalCount) parts.push(`FatSecret ${baseEstimate.sourceStats.externalCount} 项`);
+    if (baseEstimate.sourceStats.externalCount) parts.push(`USDA ${baseEstimate.sourceStats.externalCount} 项`);
     notes.push(`已优先复用 ${parts.join('，')}。`);
   }
   if (baseEstimate.sourceStats.aiOnlyCount) {
@@ -1192,14 +1186,14 @@ function renderAiResult(r) {
   document.getElementById('aiRangeChip').textContent = `范围 ${r.ranges.kcal[0]}-${r.ranges.kcal[1]} kcal`;
   document.getElementById('aiMacroRangeChip').textContent = `P ${r.ranges.protein[0]}-${r.ranges.protein[1]} · C ${r.ranges.carb[0]}-${r.ranges.carb[1]} · F ${r.ranges.fat[0]}-${r.ranges.fat[1]}`;
   document.getElementById('aiConfidenceChip').textContent = `置信度 ${r.confidenceLabel}`;
-  document.getElementById('aiKnownChip').textContent = `已知命中 ${r.sourceStats.matchedCount}/${r.sourceStats.total}${r.sourceStats.externalCount ? ` · FatSecret ${r.sourceStats.externalCount}` : ''}${r.sourceStats.customCount ? ` · 自定义 ${r.sourceStats.customCount}` : ''}`;
+  document.getElementById('aiKnownChip').textContent = `已知命中 ${r.sourceStats.matchedCount}/${r.sourceStats.total}${r.sourceStats.externalCount ? ` · USDA ${r.sourceStats.externalCount}` : ''}${r.sourceStats.customCount ? ` · 自定义 ${r.sourceStats.customCount}` : ''}`;
   renderAiFollowups(r);
   document.getElementById('aiFoodList').innerHTML = r.foods.map(f => {
     const sourceClass = f.sourceType === 'custom'
       ? 'custom'
       : (f.sourceType === 'known'
         ? 'known'
-        : ((f.sourceType === 'fatsecret_cache' || f.sourceType === 'fatsecret_live') ? 'external' : ''));
+        : ((f.sourceType === 'usda_cache' || f.sourceType === 'usda_live') ? 'external' : ''));
     const subParts = [
       `<span class="ai-source-tag ${sourceClass}">${f.sourceLabel}</span>`,
       f.matchedFoodName && f.matchedFoodName !== f.name ? `按 ${escapeHtml(f.matchedFoodName)} 基准` : '',
@@ -1254,7 +1248,7 @@ function renderFoodDropdown(results) {
     const sourceBadge = f.custom
       ? '<span class="custom-badge">自定义</span>'
       : (f.external
-        ? `<span class="food-source-chip${f.sourceType === 'fatsecret_cache' ? ' cache' : ''}">${f.sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret'}</span>`
+        ? `<span class="food-source-chip${f.sourceType === 'usda_cache' ? ' cache' : ''}">${f.sourceType === 'usda_cache' ? 'USDA 缓存' : 'USDA'}</span>`
         : '');
     return `
       <div class="food-option" data-idx="${i}"
@@ -1269,18 +1263,18 @@ function renderFoodDropdown(results) {
 
 function showNoResultHint(query, message, loading = false) {
   document.getElementById('noResultQuery').textContent = query;
-  document.getElementById('noResultSubtext').textContent = message || '可以先查 FatSecret；如果仍然没有，再手动录入到你的自定义食物库。';
-  const btn = document.getElementById('fatsecretLookupBtn');
+  document.getElementById('noResultSubtext').textContent = message || '可以先查 USDA；如果仍然没有，再手动录入到你的自定义食物库。';
+  const btn = document.getElementById('usdaLookupBtn');
   btn.disabled = loading;
-  btn.textContent = loading ? '查询中…' : '查 FatSecret';
+  btn.textContent = loading ? '查询中…' : '查 USDA';
   document.getElementById('noResultHint').style.display = 'block';
 }
 
 function hideNoResultHint() {
   document.getElementById('noResultHint').style.display = 'none';
-  const btn = document.getElementById('fatsecretLookupBtn');
+  const btn = document.getElementById('usdaLookupBtn');
   btn.disabled = false;
-  btn.textContent = '查 FatSecret';
+  btn.textContent = '查 USDA';
 }
 
 function searchFood(val) {
@@ -1300,30 +1294,30 @@ function searchFood(val) {
 
   if (!results.length) {
     dd.classList.remove('open');
-    showNoResultHint(q, '本地食物库和外部缓存都没命中，可以先查 FatSecret；如果还没有，再手动录入。');
+    showNoResultHint(q, '本地食物库和外部缓存都没命中，可以先查 USDA；如果还没有，再手动录入。');
     return;
   }
   hideNoResultHint();
   renderFoodDropdown(results);
 }
 
-async function searchFatSecretFromHint(event) {
+async function searchUsdaFromHint(event) {
   event?.stopPropagation();
   const q = cleanLookupText(document.getElementById('foodSearch').value);
   if (!q) return;
 
-  showNoResultHint(q, '正在查 FatSecret…', true);
+  showNoResultHint(q, '正在查 USDA…', true);
   try {
-    const results = await searchFatSecretFoods(q);
+    const results = await searchUsdaFoods(q);
     if (!results.length) {
-      showNoResultHint(q, 'FatSecret 里也没找到这项食物，建议直接手动录入到你的自定义食物库。');
+      showNoResultHint(q, 'USDA 里也没找到这项食物，建议直接手动录入到你的自定义食物库。');
       return;
     }
     hideNoResultHint();
     renderFoodDropdown(results);
-    showToast(`已从 FatSecret 找到 ${results.length} 条候选`);
+    showToast(`已从 USDA 找到 ${results.length} 条候选`);
   } catch (err) {
-    showNoResultHint(q, err.message || 'FatSecret 查询失败，可以稍后重试或手动录入。');
+    showNoResultHint(q, err.message || 'USDA 查询失败，可以稍后重试或手动录入。');
   }
 }
 
