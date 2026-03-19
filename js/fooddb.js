@@ -14,6 +14,7 @@ const FOOD_DB = [
   { name:'红薯',        cat:'主食', per100:{kcal:86, protein:1.6,carb:20,  fat:0.1} },
   { name:'土豆',        cat:'主食', per100:{kcal:77, protein:2,  carb:17,  fat:0.1} },
   { name:'藜麦(熟)',    cat:'主食', per100:{kcal:120,protein:4.4,carb:22,  fat:1.9} },
+  { name:'粉丝(熟)',    cat:'主食', per100:{kcal:110,protein:0.5,carb:26,  fat:0.1} },
   // 蛋白质
   { name:'鸡胸肉',      cat:'蛋白质', per100:{kcal:133,protein:31,carb:0,  fat:2.5} },
   { name:'鸡腿肉(去皮)',cat:'蛋白质', per100:{kcal:153,protein:26,carb:0,  fat:5}   },
@@ -28,9 +29,17 @@ const FOOD_DB = [
   { name:'草鱼',        cat:'蛋白质', per100:{kcal:113,protein:17,carb:0,  fat:5}   },
   { name:'虾仁',        cat:'蛋白质', per100:{kcal:93, protein:18,carb:2,  fat:1.4} },
   { name:'鸡蛋(全)',    cat:'蛋白质', per100:{kcal:155,protein:13,carb:1.1,fat:11}  },
+  { name:'鹌鹑蛋',      cat:'蛋白质', per100:{kcal:158,protein:13,carb:0.4,fat:11}  },
   { name:'蛋白(蛋清)',  cat:'蛋白质', per100:{kcal:52, protein:11,carb:0.7,fat:0.2} },
   { name:'北豆腐',      cat:'蛋白质', per100:{kcal:98, protein:9, carb:4,  fat:6}   },
   { name:'嫩豆腐',      cat:'蛋白质', per100:{kcal:63, protein:6, carb:2,  fat:3.5} },
+  { name:'炸豆腐',      cat:'蛋白质', per100:{kcal:270,protein:17,carb:6,  fat:20}  },
+  { name:'鱼豆腐',      cat:'蛋白质', per100:{kcal:150,protein:12,carb:8,  fat:8}   },
+  { name:'豆皮',        cat:'蛋白质', per100:{kcal:240,protein:22,carb:12, fat:12}  },
+  { name:'蟹柳',        cat:'蛋白质', per100:{kcal:105,protein:11,carb:12, fat:1}   },
+  { name:'午餐肉',      cat:'蛋白质', per100:{kcal:330,protein:13,carb:2,  fat:28}  },
+  { name:'牛肉丸',      cat:'蛋白质', per100:{kcal:250,protein:14,carb:10, fat:18}  },
+  { name:'肥牛卷',      cat:'蛋白质', per100:{kcal:290,protein:14,carb:0,  fat:25}  },
   // 乳制品
   { name:'全脂牛奶',        cat:'乳制品', per100:{kcal:61, protein:3.2,carb:4.8,fat:3.3} },
   { name:'脱脂牛奶',        cat:'乳制品', per100:{kcal:35, protein:3.6,carb:5,  fat:0.1} },
@@ -54,6 +63,9 @@ const FOOD_DB = [
   { name:'豆芽',   cat:'蔬菜', per100:{kcal:30, protein:3,  carb:5.9,fat:0.1} },
   { name:'西葫芦', cat:'蔬菜', per100:{kcal:17, protein:1.2,carb:3.1,fat:0.3} },
   { name:'茄子',   cat:'蔬菜', per100:{kcal:25, protein:1,  carb:6,  fat:0.2} },
+  { name:'木耳',   cat:'蔬菜', per100:{kcal:27, protein:1.5,carb:6,  fat:0.2} },
+  { name:'葱',     cat:'蔬菜', per100:{kcal:32, protein:1.8,carb:7,  fat:0.2} },
+  { name:'香菜',   cat:'蔬菜', per100:{kcal:23, protein:2.1,carb:3.7,fat:0.5} },
   // 水果
   { name:'苹果',   cat:'水果', per100:{kcal:52, protein:0.3,carb:14, fat:0.2} },
   { name:'香蕉',   cat:'水果', per100:{kcal:89, protein:1.1,carb:23, fat:0.3} },
@@ -81,6 +93,7 @@ const FOOD_DB = [
   { name:'可乐',     cat:'其他', per100:{kcal:42, protein:0,  carb:10.6,fat:0} },
   { name:'薯片',     cat:'其他', per100:{kcal:536,protein:7,  carb:53, fat:34} },
   { name:'黑巧克力', cat:'其他', per100:{kcal:546,protein:5,  carb:60, fat:31} },
+  { name:'天妇罗',   cat:'其他', per100:{kcal:280,protein:8,  carb:20, fat:18} },
 ];
 
 // ===== 运动 MET 数据库 =====

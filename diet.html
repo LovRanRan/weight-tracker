@@ -34,10 +34,23 @@
     .ai-result-box { display:none;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:14px; }
     .ai-result-box.show { display:block; }
     .ai-result-header { background:linear-gradient(135deg,var(--primary),#3d9e6b);color:white;padding:12px 18px;display:flex;align-items:center;justify-content:space-between; }
+    .ai-estimate-meta { display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px; }
+    .ai-estimate-chip { display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:white;border:1px solid var(--border);font-size:11px;color:#4a5568; }
+    .ai-followup-box { background:white;border:1px solid var(--border);border-radius:10px;padding:12px 12px 10px;margin-bottom:12px; }
+    .ai-followup-title { font-size:13px;font-weight:700;color:#2d3748;margin-bottom:8px; }
+    .ai-followup-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px; }
+    .ai-followup-item label { display:block;font-size:11px;font-weight:600;color:#718096;margin-bottom:4px; }
+    .ai-followup-item select { width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit;background:white; }
+    .ai-followup-help { font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.6; }
     .ai-food-row { display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #e8edf3;font-size:13px; }
     .ai-food-row:last-child { border-bottom:none; }
-    .ai-food-name { flex:1;font-weight:600; }
+    .ai-food-main { flex:1;min-width:0; }
+    .ai-food-name { font-weight:600; }
+    .ai-food-sub { font-size:11px;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:6px; }
     .ai-food-kcal { font-weight:700;color:var(--primary);min-width:64px;text-align:right; }
+    .ai-source-tag { display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;background:#edf2f7;color:#4a5568;font-size:10px;font-weight:700; }
+    .ai-source-tag.known { background:#e6fffa;color:#0f766e; }
+    .ai-source-tag.custom { background:#eef2ff;color:#4338ca; }
   </style>
 </head>
 <body>
@@ -134,6 +147,17 @@
         </div>
       </div>
       <div style="padding:14px 16px;background:#f8fafc">
+        <div class="ai-estimate-meta">
+          <span class="ai-estimate-chip" id="aiRangeChip">范围 -</span>
+          <span class="ai-estimate-chip" id="aiMacroRangeChip">三宏范围 -</span>
+          <span class="ai-estimate-chip" id="aiConfidenceChip">置信度 -</span>
+          <span class="ai-estimate-chip" id="aiKnownChip">命中食物库 -</span>
+        </div>
+        <div class="ai-followup-box" id="aiFollowupBox" style="display:none">
+          <div class="ai-followup-title">补充确认</div>
+          <div class="ai-followup-grid" id="aiFollowupFields"></div>
+          <div class="ai-followup-help">调整这些高影响项后会自动重新估算，主要用于收窄麻辣烫、沙拉、混合轻食碗的误差。</div>
+        </div>
         <div id="aiFoodList"></div>
         <div id="aiNoteBox" style="font-size:11px;color:var(--text-muted);background:white;border-radius:7px;padding:8px 10px;margin:10px 0;border:1px solid var(--border);line-height:1.6"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -285,9 +309,84 @@ let foodFocusIdx = -1;
 let aiImageBase64 = null;
 let aiImageMime   = 'image/jpeg';
 let aiLastResult  = null;
+let aiBaseEstimate = null;
+let aiFollowupAnswers = {};
 
 const mealOrder = ['早餐','午餐','晚餐','加餐'];
 const mealEmoji = { '早餐':'🌅','午餐':'☀️','晚餐':'🌙','加餐':'🍎' };
+const AI_STARCH_FOODS = new Set(['白米饭','糙米饭','燕麦片','面条(熟)','藜麦(熟)','粉丝(熟)','玉米','红薯','土豆']);
+const AI_RICH_FOODS = new Set(['午餐肉','肥牛卷','牛肉丸','天妇罗','炸豆腐','鱼豆腐','豆皮','腐竹','奶酪(切达)','橄榄油','黄油','牛油果']);
+const AI_ALIAS_RULES = [
+  { patterns:[/beef\s*meatball/i,/meatball/i,/牛肉丸/,/丸子/], known:'牛肉丸' },
+  { patterns:[/angus\s*beef/i,/beef\s*slice/i,/sliced\s*beef/i,/牛肉片/,/肥牛/], known:'肥牛卷' },
+  { patterns:[/^\s*beef\s*$/i,/^牛肉$/], known:'肥牛卷' },
+  { patterns:[/tempura/i,/天妇罗/], known:'天妇罗' },
+  { patterns:[/fried\s*tofu/i,/tofu\s*puff/i,/炸豆腐/,/豆腐泡/], known:'炸豆腐' },
+  { patterns:[/firm\s*tofu/i,/北豆腐/,/老豆腐/], known:'北豆腐' },
+  { patterns:[/fish\s*tofu/i,/鱼豆腐/], known:'鱼豆腐' },
+  { patterns:[/bean\s*curd/i,/tofu\s*skin/i,/豆皮/,/豆腐皮/], known:'豆皮' },
+  { patterns:[/crab\s*stick/i,/imitation\s*crab/i,/蟹柳/,/蟹棒/], known:'蟹柳' },
+  { patterns:[/quail\s*egg/i,/鹌鹑蛋/], known:'鹌鹑蛋' },
+  { patterns:[/spam/i,/luncheon\s*meat/i,/午餐肉/], known:'午餐肉' },
+  { patterns:[/vermicelli/i,/glass\s*noodle/i,/mung\s*bean\s*noodle/i,/粉丝/], known:'粉丝(熟)' },
+  { patterns:[/tomato/i,/番茄/], known:'番茄' },
+  { patterns:[/shimeji/i,/mushroom/i,/蘑菇/,/白玉菇/,/蟹味菇/], known:'蘑菇' },
+  { patterns:[/corn/i,/玉米/], known:'玉米' },
+  { patterns:[/zucchini/i,/西葫芦/], known:'西葫芦' },
+  { patterns:[/fungus/i,/wood\s*ear/i,/black\s*fungus/i,/木耳/], known:'木耳' },
+  { patterns:[/napa\s*cabbage/i,/白菜/], known:'白菜' },
+  { patterns:[/scallion/i,/green\s*onion/i,/葱/], known:'葱' },
+  { patterns:[/cilantro/i,/coriander/i,/香菜/], known:'香菜' },
+  { patterns:[/tofu/i,/豆腐/], known:'北豆腐' },
+];
+const AI_DEFAULT_WEIGHTS = {
+  '粉丝(熟)': 80,
+  '午餐肉': 60,
+  '蟹柳': 80,
+  '鱼豆腐': 100,
+  '牛肉丸': 80,
+  '肥牛卷': 100,
+  '天妇罗': 80,
+  '炸豆腐': 100,
+  '豆皮': 80,
+  '鹌鹑蛋': 40,
+  '北豆腐': 100,
+  '番茄': 100,
+  '玉米': 80,
+  '蘑菇': 80,
+  '西葫芦': 100,
+  '木耳': 30,
+  '白菜': 120,
+  '葱': 10,
+  '香菜': 8
+};
+
+const AI_PORTION_OPTIONS = {
+  starch_portion: [
+    { value:'unknown', label:'未确认' },
+    { value:'light',   label:'主食偏少' },
+    { value:'normal',  label:'主食常规' },
+    { value:'heavy',   label:'主食偏多' }
+  ],
+  rich_portion: [
+    { value:'unknown', label:'未确认' },
+    { value:'light',   label:'配料较少' },
+    { value:'normal',  label:'配料常规' },
+    { value:'heavy',   label:'配料偏多' }
+  ],
+  liquid_hotpot: [
+    { value:'unknown', label:'未确认' },
+    { value:'none',    label:'不喝汤' },
+    { value:'sips',    label:'喝几口' },
+    { value:'half',    label:'半碗以上' }
+  ],
+  liquid_salad: [
+    { value:'unknown', label:'未确认' },
+    { value:'none',    label:'少酱/不拌' },
+    { value:'sips',    label:'常规拌酱' },
+    { value:'half',    label:'酱料偏多' }
+  ]
+};
 
 // ===== 初始化 =====
 (async () => {
@@ -311,6 +410,387 @@ const mealEmoji = { '早餐':'🌅','午餐':'☀️','晚餐':'🌙','加餐':'
 })();
 
 function getAllFoods() { return [...FOOD_DB, ...customFoods]; }
+
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function round1(n) {
+  return Math.round((Number(n) || 0) * 10) / 10;
+}
+
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function normalizeFoodToken(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/（.*?）|\(.*?\)/g, '')
+    .replace(/[\s,，.。·/_\-+]+/g, '')
+    .replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
+}
+
+function resetAiEstimateState() {
+  aiBaseEstimate = null;
+  aiLastResult = null;
+  aiFollowupAnswers = {};
+  document.getElementById('aiResultBox').classList.remove('show');
+  document.getElementById('aiFollowupBox').style.display = 'none';
+  document.getElementById('aiError').style.display = 'none';
+}
+
+function getFoodsForMatching() {
+  return [...customFoods, ...FOOD_DB];
+}
+
+function matchKnownFood(name) {
+  const foods = getFoodsForMatching();
+  const normalized = normalizeFoodToken(name);
+  if (!normalized) return null;
+
+  let match = foods.find(f => normalizeFoodToken(f.name) === normalized);
+  if (match) return { food: match, matchedBy: 'exact' };
+
+  const lowered = String(name || '').toLowerCase();
+  const aliasRule = AI_ALIAS_RULES.find(rule => rule.patterns.some(pattern => pattern.test(lowered) || pattern.test(String(name || ''))));
+  if (aliasRule) {
+    match = foods.find(f => f.name === aliasRule.known);
+    if (match) return { food: match, matchedBy: 'alias' };
+  }
+
+  match = foods
+    .filter(f => {
+      const token = normalizeFoodToken(f.name);
+      return normalized.length >= 2 && token && (token.includes(normalized) || normalized.includes(token));
+    })
+    .sort((a, b) => normalizeFoodToken(b.name).length - normalizeFoodToken(a.name).length)[0];
+
+  return match ? { food: match, matchedBy: 'fuzzy' } : null;
+}
+
+function getAiDefaultWeight(food, fallbackName) {
+  if (food?.name && AI_DEFAULT_WEIGHTS[food.name]) return AI_DEFAULT_WEIGHTS[food.name];
+  const name = food?.name || fallbackName || '';
+  if (AI_STARCH_FOODS.has(name)) return 100;
+  if (food?.cat === '蔬菜') return 100;
+  if (food?.cat === '水果') return 100;
+  if (food?.cat === '乳制品') return 150;
+  return 100;
+}
+
+function estimateCountWeight(foodName, count, unit) {
+  const countMap = {
+    '鹌鹑蛋': { '个':10, '颗':10 },
+    '鸡蛋(全)': { '个':50, '颗':50 },
+    '午餐肉': { '片':30 },
+    '蟹柳': { '根':20, '条':20 },
+    '牛肉丸': { '个':25, '颗':25 },
+    '炸豆腐': { '块':30, '个':30 },
+    '鱼豆腐': { '块':25, '个':25 },
+    '天妇罗': { '块':35, '个':35 },
+    '肥牛卷': { '片':18 }
+  };
+  const foodCountMap = countMap[foodName];
+  if (foodCountMap?.[unit]) return foodCountMap[unit] * count;
+  return 25 * count;
+}
+
+function formatWeightLabel(raw, grams, usedDefault) {
+  const txt = String(raw || '').trim();
+  if (txt) return /^\d+(\.\d+)?$/.test(txt) ? `${txt}g` : txt;
+  return usedDefault ? `约${grams}g` : `${grams}g`;
+}
+
+function extractWeightInfo(name, rawWeight, matchedFood) {
+  const raw = String(rawWeight || '').trim();
+  let grams = 0;
+
+  const gramMatch = raw.match(/(\d+(?:\.\d+)?)/);
+  if (gramMatch) grams = parseFloat(gramMatch[1]);
+
+  if (!grams) {
+    const countMatch = `${name} ${raw}`.match(/(\d+(?:\.\d+)?)\s*(个|片|颗|块|串|根|条)/);
+    if (countMatch) grams = estimateCountWeight(matchedFood?.name || name, parseFloat(countMatch[1]), countMatch[2]);
+  }
+
+  let usedDefault = false;
+  if (!grams || Number.isNaN(grams)) {
+    grams = getAiDefaultWeight(matchedFood, name);
+    usedDefault = true;
+  }
+
+  grams = clamp(Math.round(grams), 5, 1200);
+  return { grams, usedDefault, label: formatWeightLabel(raw, grams, usedDefault) };
+}
+
+function calcKnownFoodMacros(food, grams) {
+  const ratio = grams / 100;
+  return {
+    kcal: Math.round((food.per100?.kcal || 0) * ratio),
+    protein: round1((food.per100?.protein || 0) * ratio),
+    carb: round1((food.per100?.carb || 0) * ratio),
+    fat: round1((food.per100?.fat || 0) * ratio),
+  };
+}
+
+function getAiRiskTags(itemName, matchedFood) {
+  const tags = new Set();
+  const name = matchedFood?.name || itemName || '';
+  const lowered = String(itemName || '').toLowerCase();
+
+  if (AI_STARCH_FOODS.has(name) || /vermicelli|noodle|rice|粉丝|面|米饭/.test(lowered + name)) tags.add('starch');
+  if (AI_RICH_FOODS.has(name) || /spam|tempura|fried|午餐肉|炸|肥牛|丸|豆皮|鱼豆腐|酱/.test(lowered + name)) tags.add('rich');
+
+  return [...tags];
+}
+
+function normalizeAiRawResult(raw) {
+  const foods = Array.isArray(raw?.foods) ? raw.foods : [];
+  return {
+    foods: foods.map(f => ({
+      name: String(f?.name || '未知食物').trim(),
+      weight: String(f?.weight || '').trim(),
+      kcal: Math.round(Number(f?.kcal) || 0),
+      protein: round1(Number(f?.protein) || 0),
+      carb: round1(Number(f?.carb) || 0),
+      fat: round1(Number(f?.fat) || 0)
+    })),
+    total: {
+      kcal: Math.round(Number(raw?.total?.kcal) || 0),
+      protein: round1(Number(raw?.total?.protein) || 0),
+      carb: round1(Number(raw?.total?.carb) || 0),
+      fat: round1(Number(raw?.total?.fat) || 0)
+    },
+    note: String(raw?.note || '').trim()
+  };
+}
+
+function detectAiDishType(items, description) {
+  const text = `${description || ''} ${items.map(i => i.name).join(' ')}`.toLowerCase();
+  const hotpotHits = items.filter(i => ['粉丝(熟)','午餐肉','鱼豆腐','牛肉丸','肥牛卷','豆皮','鹌鹑蛋','蟹柳','白菜'].includes(i.matchedFoodName)).length;
+  const saladHits = items.filter(i => ['番茄','黄瓜','生菜','西葫芦','牛油果','鸡蛋(全)'].includes(i.matchedFoodName)).length;
+
+  if (hotpotHits >= 3 || /麻辣烫|火锅|串串|hotpot|malatang/.test(text)) return 'mixed_hotpot';
+  if (saladHits >= 3 || /salad|poke|轻食|沙拉/.test(text)) return 'salad_bowl';
+  return items.length >= 6 ? 'mixed_bowl' : 'single_meal';
+}
+
+function buildAiQuestions(items, dishType) {
+  const questions = [];
+  if (items.some(item => item.riskTags.includes('starch'))) {
+    questions.push({ id: 'starch_portion', label: '主食份量', options: AI_PORTION_OPTIONS.starch_portion });
+  }
+  if (items.some(item => item.riskTags.includes('rich'))) {
+    questions.push({ id: 'rich_portion', label: '高热量配料', options: AI_PORTION_OPTIONS.rich_portion });
+  }
+  if (dishType === 'mixed_hotpot' || dishType === 'salad_bowl') {
+    questions.push({
+      id: 'liquid_intake',
+      label: dishType === 'salad_bowl' ? '酱料摄入' : '汤/底料摄入',
+      options: dishType === 'salad_bowl' ? AI_PORTION_OPTIONS.liquid_salad : AI_PORTION_OPTIONS.liquid_hotpot
+    });
+  }
+  return questions;
+}
+
+function buildAiBaseEstimate(result, context) {
+  const items = result.foods.map(food => {
+    const match = matchKnownFood(food.name);
+    const weightInfo = extractWeightInfo(food.name, food.weight, match?.food);
+    const sourceType = match?.food ? (match.food.custom ? 'custom' : 'known') : 'ai';
+    const base = match?.food ? calcKnownFoodMacros(match.food, weightInfo.grams) : {
+      kcal: Math.round(food.kcal || 0),
+      protein: round1(food.protein || 0),
+      carb: round1(food.carb || 0),
+      fat: round1(food.fat || 0)
+    };
+    return {
+      name: food.name,
+      weight: weightInfo.label,
+      grams: weightInfo.grams,
+      usedDefaultWeight: weightInfo.usedDefault,
+      matchedFoodName: match?.food?.name || '',
+      sourceType,
+      sourceLabel: sourceType === 'custom' ? '自定义库' : sourceType === 'known' ? '食物库' : 'AI估算',
+      base,
+      riskTags: getAiRiskTags(food.name, match?.food),
+      category: match?.food?.cat || '其他'
+    };
+  });
+
+  const sourceStats = {
+    total: items.length,
+    matchedCount: items.filter(i => i.sourceType !== 'ai').length,
+    customCount: items.filter(i => i.sourceType === 'custom').length,
+    aiOnlyCount: items.filter(i => i.sourceType === 'ai').length
+  };
+
+  const dishType = detectAiDishType(items, context.description);
+  return {
+    items,
+    rawNote: result.note,
+    sourceStats,
+    dishType,
+    questions: buildAiQuestions(items, dishType),
+    hasImage: context.hasImage,
+    hasText: context.hasText,
+    description: context.description
+  };
+}
+
+function getPortionFactor(value, type) {
+  const factors = {
+    starch_portion: { light: 0.75, normal: 1, heavy: 1.3 },
+    rich_portion: { light: 0.8, normal: 1, heavy: 1.25 }
+  };
+  return factors[type]?.[value] || 1;
+}
+
+function getLiquidAdjustment(value, dishType) {
+  if (!value || value === 'unknown' || value === 'none') return { kcal: 0, protein: 0, carb: 0, fat: 0 };
+  if (dishType === 'salad_bowl') {
+    if (value === 'sips') return { kcal: 55, protein: 0, carb: 3, fat: 5 };
+    return { kcal: 120, protein: 0, carb: 6, fat: 11 };
+  }
+  if (value === 'sips') return { kcal: 35, protein: 0, carb: 2, fat: 3 };
+  return { kcal: 90, protein: 0, carb: 5, fat: 8 };
+}
+
+function buildRange(value, pct, minSpread) {
+  const spread = Math.max(minSpread, Math.round(value * pct));
+  return [Math.max(0, value - spread), value + spread];
+}
+
+function getAiConfidencePct(baseEstimate, answers) {
+  let pct = baseEstimate.hasImage && baseEstimate.hasText ? 0.16 : (baseEstimate.hasImage || baseEstimate.hasText ? 0.22 : 0.28);
+  const knownRatio = baseEstimate.sourceStats.total ? baseEstimate.sourceStats.matchedCount / baseEstimate.sourceStats.total : 0;
+  pct -= knownRatio * 0.06;
+  if (baseEstimate.sourceStats.customCount) pct -= 0.02;
+  if (baseEstimate.sourceStats.aiOnlyCount > 2) pct += 0.03;
+  if (baseEstimate.dishType === 'mixed_hotpot' || baseEstimate.dishType === 'mixed_bowl') pct += 0.03;
+
+  const answeredCount = Object.values(answers || {}).filter(v => v && v !== 'unknown').length;
+  pct -= answeredCount * 0.02;
+  return clamp(pct, 0.12, 0.32);
+}
+
+function getAiConfidenceLabel(pct) {
+  if (pct <= 0.16) return '高';
+  if (pct <= 0.24) return '中';
+  return '低';
+}
+
+function buildAiNote(baseEstimate, estimate) {
+  const notes = [];
+  if (baseEstimate.rawNote) notes.push(baseEstimate.rawNote);
+
+  if (baseEstimate.sourceStats.matchedCount) {
+    const customText = baseEstimate.sourceStats.customCount ? `，其中自定义食物 ${baseEstimate.sourceStats.customCount} 项` : '';
+    notes.push(`已优先复用食物库 ${baseEstimate.sourceStats.matchedCount} 项${customText}。`);
+  }
+  if (baseEstimate.sourceStats.aiOnlyCount) {
+    notes.push(`仍有 ${baseEstimate.sourceStats.aiOnlyCount} 项未命中食物库，继续按 AI 估算。`);
+  }
+  if (baseEstimate.questions.length) {
+    notes.push('可在上方补充确认主食份量、高热量配料或汤/酱摄入，进一步收窄误差。');
+  }
+  if (baseEstimate.dishType === 'mixed_hotpot') {
+    notes.push('这类混合烫菜/火锅的主要误差通常来自粉丝、午餐肉、炸物和汤底。');
+  } else if (baseEstimate.dishType === 'salad_bowl') {
+    notes.push('这类沙拉/轻食碗的主要误差通常来自酱料、坚果和高脂配料。');
+  }
+  notes.push(`当前为${getAiConfidenceLabel(estimate.uncertaintyPct)}置信度估算，热量范围约 ${estimate.ranges.kcal[0]}-${estimate.ranges.kcal[1]} kcal。`);
+  return notes.join(' ');
+}
+
+function applyAiAdjustments(baseEstimate, answers) {
+  const foods = baseEstimate.items.map(item => {
+    let factor = 1;
+    if (item.riskTags.includes('starch')) factor *= getPortionFactor(answers?.starch_portion, 'starch_portion');
+    if (item.riskTags.includes('rich')) factor *= getPortionFactor(answers?.rich_portion, 'rich_portion');
+    factor = clamp(factor, 0.65, 1.45);
+    return {
+      ...item,
+      kcal: Math.round(item.base.kcal * factor),
+      protein: round1(item.base.protein * factor),
+      carb: round1(item.base.carb * factor),
+      fat: round1(item.base.fat * factor)
+    };
+  });
+
+  const liquidAdjustment = getLiquidAdjustment(answers?.liquid_intake, baseEstimate.dishType);
+  const total = foods.reduce((sum, food) => ({
+    kcal: sum.kcal + food.kcal,
+    protein: sum.protein + food.protein,
+    carb: sum.carb + food.carb,
+    fat: sum.fat + food.fat
+  }), { kcal: 0, protein: 0, carb: 0, fat: 0 });
+
+  total.kcal += liquidAdjustment.kcal;
+  total.protein += liquidAdjustment.protein;
+  total.carb += liquidAdjustment.carb;
+  total.fat += liquidAdjustment.fat;
+
+  total.kcal = Math.round(total.kcal);
+  total.protein = Math.round(total.protein);
+  total.carb = Math.round(total.carb);
+  total.fat = Math.round(total.fat);
+
+  const uncertaintyPct = getAiConfidencePct(baseEstimate, answers);
+  const ranges = {
+    kcal: buildRange(total.kcal, uncertaintyPct, 80),
+    protein: buildRange(total.protein, uncertaintyPct * 0.65, 6),
+    carb: buildRange(total.carb, uncertaintyPct * 0.65, 6),
+    fat: buildRange(total.fat, uncertaintyPct * 0.65, 4)
+  };
+
+  const estimate = {
+    foods,
+    total,
+    ranges,
+    uncertaintyPct,
+    confidenceLabel: getAiConfidenceLabel(uncertaintyPct),
+    questions: baseEstimate.questions,
+    sourceStats: baseEstimate.sourceStats,
+    note: '',
+    dishType: baseEstimate.dishType
+  };
+  estimate.note = buildAiNote(baseEstimate, estimate);
+  return estimate;
+}
+
+function renderAiFollowups(estimate) {
+  const box = document.getElementById('aiFollowupBox');
+  const fields = document.getElementById('aiFollowupFields');
+  if (!estimate.questions.length) {
+    box.style.display = 'none';
+    fields.innerHTML = '';
+    return;
+  }
+
+  fields.innerHTML = estimate.questions.map(q => `
+    <div class="ai-followup-item">
+      <label>${escapeHtml(q.label)}</label>
+      <select onchange="handleAiFollowupChange('${q.id}', this.value)">
+        ${q.options.map(opt => `<option value="${opt.value}" ${aiFollowupAnswers[q.id] === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  box.style.display = 'block';
+}
+
+function handleAiFollowupChange(id, value) {
+  aiFollowupAnswers[id] = value;
+  if (!aiBaseEstimate) return;
+  aiLastResult = applyAiAdjustments(aiBaseEstimate, aiFollowupAnswers);
+  renderAiResult(aiLastResult);
+}
 
 // ===== API KEY =====
 function getApiKey() { return localStorage.getItem('anthropicKey') || ''; }
@@ -349,6 +829,7 @@ function showApiMsg(msg, color) {
 function handleImageUpload(e) {
   const file = e.target.files[0];
   if (!file) return;
+  resetAiEstimateState();
   aiImageMime = file.type || 'image/jpeg';
   const reader = new FileReader();
   reader.onload = ev => {
@@ -366,6 +847,7 @@ function handleImageUpload(e) {
 }
 function removeAiImage(e) {
   e.stopPropagation();
+  resetAiEstimateState();
   aiImageBase64 = null;
   document.getElementById('aiPreviewImg').style.display = 'none';
   document.getElementById('aiPreviewImg').src = '';
@@ -389,16 +871,23 @@ async function aiEstimate() {
 
   const userContent = [];
   if (aiImageBase64) userContent.push({ type:'image', source:{ type:'base64', media_type:aiImageMime, data:aiImageBase64 } });
-  userContent.push({ type:'text', text:`请分析${aiImageBase64?'图片中的':'以下'}食物，估算每种食物的热量和营养（基于中国常见份量）。${desc?'用户备注：'+desc:''}
+  userContent.push({ type:'text', text:`请分析${aiImageBase64?'图片中的':'以下'}食物，重点识别食物名称、烹饪方式和大致克重。${desc?'用户备注：'+desc:''}
 请只返回如下 JSON，不要其他文字：
 {"foods":[{"name":"食物名","weight":"克重","kcal":数字,"protein":数字,"carb":数字,"fat":数字}],"total":{"kcal":数字,"protein":数字,"carb":数字,"fat":数字},"note":"简短说明（不超过60字）"}
-所有数字为整数。` });
+要求：
+1. weight 尽量写成克重，如 80g、150g；实在不确定再写常见份量。
+2. 名称尽量保留关键烹饪方式，例如炸豆腐、鱼豆腐、午餐肉。
+3. 所有数字为整数。` });
 
   const btn = document.getElementById('aiBtn');
   btn.disabled = true; btn.textContent = '⏳ 估算中…';
   document.getElementById('aiLoading').style.display = 'block';
   document.getElementById('aiResultBox').classList.remove('show');
   document.getElementById('aiError').style.display = 'none';
+  document.getElementById('aiAddMsg').style.display = 'none';
+  aiBaseEstimate = null;
+  aiLastResult = null;
+  aiFollowupAnswers = {};
 
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -412,10 +901,12 @@ async function aiEstimate() {
     const raw  = data.content?.[0]?.text || '';
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('AI 返回格式异常，请重试。');
-    const result = JSON.parse(match[0]);
+    const result = normalizeAiRawResult(JSON.parse(match[0]));
     if (!result.foods || !result.total) throw new Error('AI 返回数据不完整，请重试。');
-    aiLastResult = result;
-    renderAiResult(result);
+    aiBaseEstimate = buildAiBaseEstimate(result, { hasImage: !!aiImageBase64, hasText: !!desc, description: desc });
+    aiFollowupAnswers = Object.fromEntries(aiBaseEstimate.questions.map(q => [q.id, 'unknown']));
+    aiLastResult = applyAiAdjustments(aiBaseEstimate, aiFollowupAnswers);
+    renderAiResult(aiLastResult);
   } catch(err) {
     showAiError('❌ ' + err.message);
   } finally {
@@ -430,13 +921,28 @@ function renderAiResult(r) {
   document.getElementById('aiTotalProt').textContent = t.protein;
   document.getElementById('aiTotalCarb').textContent = t.carb;
   document.getElementById('aiTotalFat').textContent  = t.fat;
-  document.getElementById('aiFoodList').innerHTML = r.foods.map(f =>
-    `<div class="ai-food-row">
-      <div class="ai-food-name">${f.name}</div>
-      <div style="font-size:12px;color:var(--text-muted)">${f.weight}</div>
-      <div style="font-size:11px;color:var(--text-muted);text-align:right;min-width:90px">蛋白${f.protein}g 碳水${f.carb}g 脂${f.fat}g</div>
+  document.getElementById('aiRangeChip').textContent = `范围 ${r.ranges.kcal[0]}-${r.ranges.kcal[1]} kcal`;
+  document.getElementById('aiMacroRangeChip').textContent = `P ${r.ranges.protein[0]}-${r.ranges.protein[1]} · C ${r.ranges.carb[0]}-${r.ranges.carb[1]} · F ${r.ranges.fat[0]}-${r.ranges.fat[1]}`;
+  document.getElementById('aiConfidenceChip').textContent = `置信度 ${r.confidenceLabel}`;
+  document.getElementById('aiKnownChip').textContent = `复用食物库 ${r.sourceStats.matchedCount}/${r.sourceStats.total}${r.sourceStats.customCount ? ` · 自定义 ${r.sourceStats.customCount}` : ''}`;
+  renderAiFollowups(r);
+  document.getElementById('aiFoodList').innerHTML = r.foods.map(f => {
+    const sourceClass = f.sourceType === 'custom' ? 'custom' : (f.sourceType === 'known' ? 'known' : '');
+    const subParts = [
+      `<span class="ai-source-tag ${sourceClass}">${f.sourceLabel}</span>`,
+      f.matchedFoodName && f.matchedFoodName !== f.name ? `按 ${escapeHtml(f.matchedFoodName)} 基准` : '',
+      f.usedDefaultWeight ? '缺少明确克重，已按常见份量估算' : ''
+    ].filter(Boolean);
+    return `<div class="ai-food-row">
+      <div class="ai-food-main">
+        <div class="ai-food-name">${escapeHtml(f.name)}</div>
+        <div class="ai-food-sub">${subParts.join(' · ')}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted)">${escapeHtml(f.weight)}</div>
+      <div style="font-size:11px;color:var(--text-muted);text-align:right;min-width:100px">蛋白${Math.round(f.protein)}g 碳水${Math.round(f.carb)}g 脂${Math.round(f.fat)}g</div>
       <div class="ai-food-kcal">${f.kcal} kcal</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   document.getElementById('aiNoteBox').textContent = r.note || '';
   document.getElementById('aiResultBox').classList.add('show');
   document.getElementById('aiAddMsg').style.display = 'none';
