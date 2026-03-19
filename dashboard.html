@@ -56,17 +56,21 @@
     <div class="goal-section">
       <div class="goal-item">
         <span class="goal-label">起始体重</span>
-        <input type="number" id="startWeight" placeholder="kg" min="30" max="300" step="0.1" onchange="saveGoals()">
+        <input type="number" id="startWeight" placeholder="kg" min="30" max="300" step="0.1">
         <span class="goal-label">kg</span>
       </div>
       <div class="goal-item">
         <span class="goal-label">目标体重</span>
-        <input type="number" id="goalWeight" placeholder="kg" min="30" max="300" step="0.1" onchange="saveGoals()">
+        <input type="number" id="goalWeight" placeholder="kg" min="30" max="300" step="0.1">
         <span class="goal-label">kg</span>
       </div>
       <div class="goal-item">
         <span class="goal-label">目标日期</span>
-        <input type="date" id="goalDate" onchange="saveGoals()" style="width:150px">
+        <input type="date" id="goalDate" style="width:150px">
+      </div>
+      <div class="goal-actions">
+        <button class="btn btn-primary" onclick="saveGoals()">保存目标</button>
+        <span id="goalSaveMsg" class="inline-save-msg">已保存</span>
       </div>
     </div>
     <div class="progress-wrap">
@@ -79,6 +83,7 @@
       </div>
     </div>
   </div>
+
 
   <!-- TDEE 估算 -->
   <div class="card">
@@ -168,9 +173,17 @@
 
       <div id="tdeeNote" style="font-size:12px;color:var(--text-muted);background:white;border-radius:7px;padding:8px 10px;margin-bottom:12px;line-height:1.6"></div>
 
-      <button class="btn btn-primary" style="width:100%" onclick="syncTDEEToGoals()">
-        📥 同步到饮食计划目标
-      </button>
+      <div class="tdee-actions">
+        <button class="btn btn-secondary" onclick="saveTDEEProfile()">
+          保存 TDEE 设置
+        </button>
+        <button class="btn btn-primary" onclick="syncTDEEToGoals()">
+          📥 同步到饮食计划目标
+        </button>
+      </div>
+      <div id="tdeeSaveMsg" class="inline-save-msg tdee-save-msg">
+        TDEE 设置已保存
+      </div>
       <div id="tdeeSyncMsg" style="text-align:center;font-size:12px;color:var(--primary);margin-top:6px;display:none">
         ✅ 已同步！可前往「饮食计划」查看
       </div>
@@ -259,6 +272,16 @@ function renderAll() {
   renderTodayWorkouts();
 }
 
+function showInlineMessage(id, duration = 2200) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = 'inline-flex';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => {
+    el.style.display = 'none';
+  }, duration);
+}
+
 // ===== 统计卡片 =====
 function renderStats() {
   const cur = weights.length ? weights[weights.length - 1].value : null;
@@ -320,7 +343,11 @@ async function saveGoals() {
     if (!profile) profile = {};
     Object.assign(profile, fields);
     updateProgress();
-  } catch(e) { console.error(e); }
+    showInlineMessage('goalSaveMsg');
+  } catch(e) {
+    console.error(e);
+    alert('保存目标失败：' + e.message);
+  }
 }
 
 // ===== TDEE =====
@@ -370,23 +397,33 @@ function calcTDEE() {
   document.getElementById('macroCarb').textContent    = carbG + 'g';
   document.getElementById('macroFat').textContent     = fatG + 'g';
   document.getElementById('tdeeNote').textContent     = TDEE_NOTES[goal];
+  document.getElementById('tdeeSaveMsg').style.display = 'none';
   document.getElementById('tdeeSyncMsg').style.display = 'none';
 
   window._tdeeLatest = { kcal: target, protein, carb: carbG, fat: fatG };
+}
 
-  // 自动保存 TDEE 设置（防抖 1 秒）
-  clearTimeout(window._tdeeSaveTimer);
-  window._tdeeSaveTimer = setTimeout(async () => {
-    try {
-      await saveProfile({
-        gender, age, height,
-        activity: document.getElementById('tdeeActivity').value,
-        goal
-      });
-      if (!profile) profile = {};
-      Object.assign(profile, { gender, age, height, activity: document.getElementById('tdeeActivity').value, goal });
-    } catch(e) { console.error(e); }
-  }, 1000);
+async function saveTDEEProfile() {
+  const gender   = document.getElementById('tdeeGender').value;
+  const age      = parseFloat(document.getElementById('tdeeAge').value);
+  const height   = parseFloat(document.getElementById('tdeeHeight').value);
+  const activity = document.getElementById('tdeeActivity').value;
+  const goal     = document.getElementById('tdeeGoal').value;
+
+  if (!age || !height) {
+    alert('请先填写完整的年龄和身高');
+    return;
+  }
+
+  try {
+    await saveProfile({ gender, age, height, activity, goal });
+    if (!profile) profile = {};
+    Object.assign(profile, { gender, age, height, activity, goal });
+    showInlineMessage('tdeeSaveMsg');
+  } catch(e) {
+    console.error(e);
+    alert('保存 TDEE 设置失败：' + e.message);
+  }
 }
 
 async function syncTDEEToGoals() {
