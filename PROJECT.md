@@ -2,6 +2,7 @@
 
 ## 项目概述
 减肥追踪 Web App，多页面架构 + Supabase 后端（Auth + PostgreSQL + RLS），Netlify 自动部署。
+- 线上地址：[myweightlog.netlify.app](https://myweightlog.netlify.app)
 
 ## 技术栈
 - 前端：纯 HTML/CSS/JS（多页面，非 SPA）
