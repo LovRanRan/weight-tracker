@@ -108,3 +108,16 @@ ALTER TABLE custom_foods ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users_own_custom_foods" ON custom_foods
   FOR ALL USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- 8. 给前端登录角色授权
+-- 如果只做了建表和 RLS，但没给 authenticated/anon 角色表权限，
+-- 前端会直接报 "permission denied for table ..."
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+-- 让后续新建的表/序列也自动继承上述权限
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;

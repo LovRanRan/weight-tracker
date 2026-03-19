@@ -21,18 +21,39 @@ weight-tracker/
 │   ├── db.js               # 所有数据库操作封装
 │   └── fooddb.js           # 静态数据（食物库、运动库、饮食模板）
 ├── index.html              # 登录/注册页
-├── dashboard.html          # 概览页（统计、目标、TDEE、体重图表、今日训练）
+├── dashboard.html          # 概览页（统计、目标保存、TDEE 设置/同步、体重图表、今日训练）
 ├── weight.html             # 体重记录页
 ├── diet.html               # 饮食记录页（AI识别、食物查询、自定义食物、手动记录）
 ├── training.html           # 训练计划页（运动库、周计划、完成打卡）
 ├── mealplan.html           # 饮食计划页（模板、周计划、营养目标）
 ├── supabase_setup.sql      # 数据库建表脚本（仅参考，实际表已建好）
-└── project.md              # 本文档
+└── PROJECT.md              # 本文档
 ```
+
+## 当前页面交互说明
+
+### dashboard.html
+- 减肥目标卡片包含：起始体重、目标体重、目标日期。
+- 用户修改后需点击“保存目标”，保存成功后显示“已保存”反馈。
+- 减重进度条基于 `user_profile.start_weight`、`user_profile.target_weight` 与最新体重记录动态计算。
+- TDEE 卡片会根据性别、年龄、身高、体重、活动量、目标实时计算建议热量与三大营养素。
+- TDEE 基础资料改为手动确认：点击“保存 TDEE 设置”后写入 `user_profile` 的 `gender / age / height / activity / goal`。
+- 点击“同步到饮食计划目标”后，将计算出的 `kcal_target / protein_target / carb_target / fat_target` 写入 `user_profile`，供饮食计划页读取。
+
+## 最近更新
+- 2026-03-18：优化 dashboard 两个关键卡片的交互确认逻辑。
+- 2026-03-18：减肥目标区新增“保存目标”按钮与保存成功提示，避免用户误以为未生效。
+- 2026-03-18：TDEE 区从隐式自动保存调整为“保存 TDEE 设置”手动确认，并保留“同步到饮食计划目标”入口。
+- 2026-03-18：补充 Supabase 表权限授权说明，修复饮食页写入 `diets` 时出现的 `permission denied for table diets` 问题。
 
 ## Supabase 数据库表结构
 
 所有表启用 RLS，策略：`auth.uid() = user_id`
+
+### 权限说明
+- 仅开启 RLS 不够，前端使用的 Supabase `authenticated` / `anon` 角色还需要拥有 `public` schema、表和序列的基础权限。
+- 如果缺少授权，前端新增记录时会直接报 `permission denied for table ...`，例如饮食页写入 `diets` 失败。
+- 初始化库时除了建表和 policy，还要执行 [supabase_setup.sql](/Users/destiny/Desktop/weight-tracker/supabase_setup.sql) 末尾的 `GRANT` 与 `ALTER DEFAULT PRIVILEGES` 语句。
 
 ### user_profile
 | 列名 | 类型 | 说明 |
