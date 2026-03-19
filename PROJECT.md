@@ -7,7 +7,7 @@
 ## 技术栈
 - 前端：原生 HTML/CSS/JavaScript（单文件 index.html）
 - 数据库 + 认证：Supabase
-- 托管：Netlify（已上线 https://myweightlog.netlify.app）
+- 托管：Netlify（已上线 https://myweightlog.netlify.app
 - 域名：davidzhou.blog（待配置）
 
 ## Supabase 信息
