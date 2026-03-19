@@ -20,8 +20,12 @@
     .calc-result-box { background:#f8fafc;border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:none; }
     .calc-result-box.visible { display:block; }
     .custom-badge { display:inline-block;background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px; }
-    .no-result-hint { display:none;background:#fffbeb;border:1.5px dashed #f59e0b;border-radius:9px;padding:12px 16px;margin-bottom:10px;font-size:13px;color:#92400e;cursor:pointer; }
-    .no-result-hint:hover { background:#fef3c7; }
+    .food-source-chip { display:inline-flex;align-items:center;background:#fff7ed;color:#c2410c;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px; }
+    .food-source-chip.cache { background:#eff6ff;color:#1d4ed8; }
+    .no-result-hint { display:none;background:#fffbeb;border:1.5px dashed #f59e0b;border-radius:9px;padding:12px 16px;margin-bottom:10px;font-size:13px;color:#92400e; }
+    .no-result-hint strong { color:#7c2d12; }
+    .no-result-subtext { font-size:12px;color:#a16207;margin-top:6px;line-height:1.6; }
+    .no-result-actions { display:flex;gap:8px;flex-wrap:wrap;margin-top:10px; }
     .meal-group { margin-bottom:8px; }
     .meal-header { font-size:13px;font-weight:600;color:var(--text-muted);padding:6px 0 4px;display:flex;justify-content:space-between;align-items:center; }
     .meal-kcal { color:var(--primary);font-size:13px; }
@@ -51,6 +55,7 @@
     .ai-source-tag { display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;background:#edf2f7;color:#4a5568;font-size:10px;font-weight:700; }
     .ai-source-tag.known { background:#e6fffa;color:#0f766e; }
     .ai-source-tag.custom { background:#eef2ff;color:#4338ca; }
+    .ai-source-tag.external { background:#fff7ed;color:#c2410c; }
   </style>
 </head>
 <body>
@@ -186,8 +191,13 @@
       <div class="food-dropdown" id="foodDropdown"></div>
     </div>
 
-    <div class="no-result-hint" id="noResultHint" onclick="openCustomForm()">
-      🔍 没找到「<span id="noResultQuery"></span>」— 点此<strong>手动录入</strong> ✏️
+    <div class="no-result-hint" id="noResultHint">
+      <div>🔍 本地食物库没找到「<span id="noResultQuery"></span>」</div>
+      <div class="no-result-subtext" id="noResultSubtext">可以先查 FatSecret；如果仍然没有，再手动录入到你的自定义食物库。</div>
+      <div class="no-result-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="fatsecretLookupBtn" onclick="searchFatSecretFromHint(event)">查 FatSecret</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openCustomForm()">手动录入</button>
+      </div>
     </div>
 
     <div class="calc-result-box" id="calcResultBox">
@@ -304,8 +314,10 @@
 
 let diets       = [];
 let customFoods = [];
+let externalFoods = [];
 let currentFood = null;
 let foodFocusIdx = -1;
+let foodSearchResults = [];
 let aiImageBase64 = null;
 let aiImageMime   = 'image/jpeg';
 let aiLastResult  = null;
@@ -314,6 +326,9 @@ let aiFollowupAnswers = {};
 
 const mealOrder = ['早餐','午餐','晚餐','加餐'];
 const mealEmoji = { '早餐':'🌅','午餐':'☀️','晚餐':'🌙','加餐':'🍎' };
+const FATSECRET_FUNCTION_URL = '/.netlify/functions/fatsecret-search';
+const FATSECRET_DEFAULT_REGION = 'US';
+const FATSECRET_DEFAULT_LANGUAGE = 'en';
 const AI_STARCH_FOODS = new Set(['白米饭','糙米饭','燕麦片','面条(熟)','藜麦(熟)','粉丝(熟)','玉米','红薯','土豆']);
 const AI_RICH_FOODS = new Set(['午餐肉','肥牛卷','牛肉丸','天妇罗','炸豆腐','鱼豆腐','豆皮','腐竹','奶酪(切达)','橄榄油','黄油','牛油果']);
 const AI_ALIAS_RULES = [
@@ -401,15 +416,13 @@ const AI_PORTION_OPTIONS = {
   updateApikeyDot();
 
   showLoading(true);
-  [diets, customFoods] = await Promise.all([getAllDiets(), getCustomFoods()]);
+  [diets, customFoods, externalFoods] = await Promise.all([getAllDiets(), getCustomFoods(), getExternalFoodCacheFoods()]);
   showLoading(false);
 
   renderDietList();
   viewDietByDate();
   renderCustomLib();
 })();
-
-function getAllFoods() { return [...FOOD_DB, ...customFoods]; }
 
 function escapeHtml(str = '') {
   return String(str)
@@ -436,6 +449,28 @@ function normalizeFoodToken(text = '') {
     .replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
 }
 
+function cleanLookupText(text = '') {
+  return String(text)
+    .replace(/\b\d+(?:\.\d+)?\s*(g|gram|grams|kg|ml|oz|lb)\b/ig, ' ')
+    .replace(/\d+(?:\.\d+)?\s*(克|千克|毫升|盎司|磅)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function uniqueFoods(foods = []) {
+  const seen = new Set();
+  return foods.filter(food => {
+    const key = normalizeFoodToken(food.name) || `external:${food.fatsecret?.foodId || food.id || ''}:${food.fatsecret?.servingId || ''}`;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getAllFoods() {
+  return uniqueFoods([...customFoods, ...FOOD_DB, ...externalFoods]);
+}
+
 function resetAiEstimateState() {
   aiBaseEstimate = null;
   aiLastResult = null;
@@ -446,7 +481,217 @@ function resetAiEstimateState() {
 }
 
 function getFoodsForMatching() {
-  return [...customFoods, ...FOOD_DB];
+  return getAllFoods();
+}
+
+function getFoodSourceBadgeHtml(food) {
+  if (food?.custom) return ' <span class="custom-badge">自定义</span>';
+  if (food?.external) {
+    const cacheClass = food.sourceType === 'fatsecret_cache' ? ' cache' : '';
+    const label = food.sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret';
+    return ` <span class="food-source-chip${cacheClass}">${label}</span>`;
+  }
+  return '';
+}
+
+function inferExternalFoodCategory(name, per100) {
+  const lowered = String(name || '').toLowerCase();
+  if (/apple|banana|orange|berry|mango|fruit|苹果|香蕉|橙|草莓|蓝莓|芒果|牛油果/.test(lowered)) return '水果';
+  if (/lettuce|broccoli|spinach|cucumber|tomato|mushroom|cabbage|zucchini|vegetable|番茄|黄瓜|西兰花|菠菜|白菜|蘑菇|西葫芦|木耳|葱|香菜/.test(lowered)) return '蔬菜';
+  if (/rice|bread|oat|noodle|pasta|vermicelli|corn|potato|quinoa|bun|米|饭|面|粉丝|燕麦|玉米|土豆|藜麦|馒头|面包/.test(lowered)) return '主食';
+  if (/chicken|beef|pork|egg|tofu|fish|tuna|shrimp|ham|spam|meat|鸡|牛|猪|蛋|豆腐|鱼|虾|午餐肉|肉丸/.test(lowered)) return '蛋白质';
+  if ((per100?.fat || 0) >= 60) return '油脂';
+  if ((per100?.protein || 0) >= 15 && (per100?.carb || 0) <= 12) return '蛋白质';
+  if ((per100?.carb || 0) >= 20 && (per100?.protein || 0) <= 10) return '主食';
+  return '其他';
+}
+
+function mapFatSecretFoodPayload(payload, sourceType = 'fatsecret_live') {
+  if (!payload?.name || !payload?.per100) return null;
+  return {
+    id: `fatsecret:${payload.fatsecret?.foodId || payload.foodId || payload.name}:${payload.fatsecret?.servingId || payload.servingId || ''}`,
+    name: payload.name,
+    cat: payload.cat || inferExternalFoodCategory(payload.name, payload.per100),
+    external: true,
+    externalPending: sourceType === 'fatsecret_live',
+    sourceType,
+    sourceLabel: sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret',
+    per100: {
+      kcal: Math.round(payload.per100.kcal || 0),
+      protein: round1(payload.per100.protein || 0),
+      carb: round1(payload.per100.carb || 0),
+      fat: round1(payload.per100.fat || 0)
+    },
+    fatsecret: {
+      foodId: String(payload.fatsecret?.foodId || payload.foodId || ''),
+      servingId: String(payload.fatsecret?.servingId || payload.servingId || ''),
+      foodName: payload.fatsecret?.foodName || payload.foodName || payload.name,
+      brandName: payload.fatsecret?.brandName || payload.brandName || '',
+      foodType: payload.fatsecret?.foodType || payload.foodType || '',
+      servingDescription: payload.fatsecret?.servingDescription || payload.servingDescription || '',
+      servingGrams: payload.fatsecret?.servingGrams == null ? null : Number(payload.fatsecret.servingGrams || payload.servingGrams || 0),
+      region: payload.fatsecret?.region || FATSECRET_DEFAULT_REGION,
+      language: payload.fatsecret?.language || FATSECRET_DEFAULT_LANGUAGE
+    }
+  };
+}
+
+function upsertExternalFoodLocal(food) {
+  if (!food?.external) return food;
+  externalFoods = [
+    food,
+    ...externalFoods.filter(item => {
+      const sameKey = item.fatsecret?.foodId === food.fatsecret?.foodId
+        && (item.fatsecret?.servingId || '') === (food.fatsecret?.servingId || '');
+      const sameName = normalizeFoodToken(item.name) === normalizeFoodToken(food.name);
+      return !sameKey && !sameName;
+    })
+  ];
+  return food;
+}
+
+async function callFatSecretLookup(params) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null && value !== '') query.set(key, value);
+  });
+  const resp = await fetch(`${FATSECRET_FUNCTION_URL}?${query.toString()}`);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || 'FatSecret 查询失败');
+  return data;
+}
+
+async function searchFatSecretFoods(query) {
+  const cleaned = cleanLookupText(query);
+  if (!cleaned) return [];
+  const data = await callFatSecretLookup({ q: cleaned });
+  return uniqueFoods((data.foods || []).map(item => mapFatSecretFoodPayload(item, 'fatsecret_live')).filter(Boolean));
+}
+
+async function fetchFatSecretFoodById(foodId, servingId = '') {
+  if (!foodId) return null;
+  const data = await callFatSecretLookup({ foodId, servingId });
+  return data.food ? mapFatSecretFoodPayload(data.food, 'fatsecret_live') : null;
+}
+
+async function persistExternalFood(food, lookupName, confidence = 0.88) {
+  if (!food?.external || !food.fatsecret?.foodId) return food;
+  const normalizedName = normalizeFoodToken(cleanLookupText(lookupName || food.name));
+  const region = food.fatsecret.region || FATSECRET_DEFAULT_REGION;
+  const language = food.fatsecret.language || FATSECRET_DEFAULT_LANGUAGE;
+  const cachedFood = await saveExternalFoodCache({
+    source: 'fatsecret',
+    fatsecret_food_id: food.fatsecret.foodId,
+    fatsecret_serving_id: food.fatsecret.servingId || '',
+    fatsecret_food_name: food.name,
+    serving_description: food.fatsecret.servingDescription || '',
+    serving_grams: food.fatsecret.servingGrams == null ? null : food.fatsecret.servingGrams,
+    per100_kcal: food.per100.kcal,
+    per100_protein: food.per100.protein,
+    per100_carb: food.per100.carb,
+    per100_fat: food.per100.fat,
+    locale_region: region,
+    locale_language: language
+  });
+
+  if (normalizedName) {
+    await saveExternalFoodMatch({
+      normalized_name: normalizedName,
+      original_name: lookupName || food.name,
+      source: 'fatsecret',
+      fatsecret_food_id: food.fatsecret.foodId,
+      fatsecret_serving_id: food.fatsecret.servingId || '',
+      fatsecret_food_name: food.name,
+      locale_region: region,
+      locale_language: language,
+      match_confidence: confidence
+    });
+  }
+
+  return upsertExternalFoodLocal(cachedFood || { ...food, externalPending: false, sourceType: 'fatsecret_cache', sourceLabel: 'FatSecret 缓存' });
+}
+
+async function resolveFoodByPriority(name, options = {}) {
+  const lookupName = cleanLookupText(name || '');
+  const normalizedName = normalizeFoodToken(lookupName || name || '');
+  if (!normalizedName) return null;
+
+  if (options.memo?.has(normalizedName)) return options.memo.get(normalizedName);
+
+  const task = (async () => {
+    const localMatch = matchKnownFood(lookupName || name);
+    if (localMatch) {
+      return {
+        food: localMatch.food,
+        matchedBy: localMatch.matchedBy,
+        sourceType: localMatch.food.custom ? 'custom' : (localMatch.food.sourceType || 'known')
+      };
+    }
+
+    if (options.allowExternal === false) return null;
+
+    try {
+      const existingMatch = await getExternalFoodMatchByName(normalizedName, FATSECRET_DEFAULT_REGION, FATSECRET_DEFAULT_LANGUAGE);
+      if (existingMatch) {
+        const memoryHit = externalFoods.find(food =>
+          food.fatsecret?.foodId === existingMatch.fatsecret_food_id
+          && (food.fatsecret?.servingId || '') === (existingMatch.fatsecret_serving_id || '')
+        );
+        if (memoryHit) {
+          return { food: memoryHit, matchedBy: 'external-memory', sourceType: memoryHit.sourceType || 'fatsecret_cache' };
+        }
+
+        const cachedFood = await getExternalFoodCacheByIds(
+          existingMatch.fatsecret_food_id,
+          existingMatch.fatsecret_serving_id || '',
+          existingMatch.locale_region || FATSECRET_DEFAULT_REGION,
+          existingMatch.locale_language || FATSECRET_DEFAULT_LANGUAGE
+        );
+        if (cachedFood) {
+          upsertExternalFoodLocal(cachedFood);
+          return { food: cachedFood, matchedBy: 'external-cache', sourceType: 'fatsecret_cache' };
+        }
+
+        const refreshed = await fetchFatSecretFoodById(existingMatch.fatsecret_food_id, existingMatch.fatsecret_serving_id || '');
+        if (refreshed) {
+          let saved = refreshed;
+          if (options.persistExternal !== false) {
+            try {
+              saved = await persistExternalFood(refreshed, options.lookupName || existingMatch.original_name || lookupName, Number(existingMatch.match_confidence || 0.88));
+            } catch (err) {
+              console.warn('persist refreshed external food failed:', err.message);
+              saved = upsertExternalFoodLocal({ ...refreshed, externalPending: false });
+            }
+          }
+          return { food: saved, matchedBy: 'external-refresh', sourceType: saved.sourceType || 'fatsecret_live' };
+        }
+      }
+    } catch (err) {
+      console.warn('external match lookup failed:', err.message);
+    }
+
+    try {
+      const results = await searchFatSecretFoods(lookupName || name);
+      if (!results.length) return null;
+      const best = results[0];
+      let saved = best;
+      if (options.persistExternal !== false) {
+        try {
+          saved = await persistExternalFood(best, options.lookupName || lookupName || name, options.matchConfidence || 0.84);
+        } catch (err) {
+          console.warn('persist fatsecret food failed:', err.message);
+          saved = upsertExternalFoodLocal({ ...best, externalPending: false });
+        }
+      }
+      return { food: saved, matchedBy: 'fatsecret-live', sourceType: saved.sourceType || 'fatsecret_live' };
+    } catch (err) {
+      if (!options.silent) console.warn('fatsecret lookup failed:', err.message);
+      return null;
+    }
+  })();
+
+  if (options.memo) options.memo.set(normalizedName, task);
+  return task;
 }
 
 function matchKnownFood(name) {
@@ -599,12 +844,30 @@ function buildAiQuestions(items, dishType) {
   return questions;
 }
 
-function buildAiBaseEstimate(result, context) {
-  const items = result.foods.map(food => {
-    const match = matchKnownFood(food.name);
-    const weightInfo = extractWeightInfo(food.name, food.weight, match?.food);
-    const sourceType = match?.food ? (match.food.custom ? 'custom' : 'known') : 'ai';
-    const base = match?.food ? calcKnownFoodMacros(match.food, weightInfo.grams) : {
+async function buildAiBaseEstimate(result, context) {
+  const resolverMemo = new Map();
+  const items = await Promise.all(result.foods.map(async food => {
+    const resolved = await resolveFoodByPriority(food.name, {
+      lookupName: food.name,
+      persistExternal: true,
+      silent: true,
+      memo: resolverMemo
+    });
+    const matchedFood = resolved?.food || null;
+    const weightInfo = extractWeightInfo(food.name, food.weight, matchedFood);
+    const sourceType = matchedFood
+      ? (matchedFood.custom ? 'custom' : (matchedFood.sourceType || 'known'))
+      : 'ai';
+    const sourceLabel = sourceType === 'custom'
+      ? '自定义库'
+      : sourceType === 'known'
+        ? '食物库'
+        : sourceType === 'fatsecret_cache'
+          ? 'FatSecret 缓存'
+          : sourceType === 'fatsecret_live'
+            ? 'FatSecret'
+            : 'AI估算';
+    const base = matchedFood ? calcKnownFoodMacros(matchedFood, weightInfo.grams) : {
       kcal: Math.round(food.kcal || 0),
       protein: round1(food.protein || 0),
       carb: round1(food.carb || 0),
@@ -615,19 +878,21 @@ function buildAiBaseEstimate(result, context) {
       weight: weightInfo.label,
       grams: weightInfo.grams,
       usedDefaultWeight: weightInfo.usedDefault,
-      matchedFoodName: match?.food?.name || '',
+      matchedFoodName: matchedFood?.name || '',
       sourceType,
-      sourceLabel: sourceType === 'custom' ? '自定义库' : sourceType === 'known' ? '食物库' : 'AI估算',
+      sourceLabel,
       base,
-      riskTags: getAiRiskTags(food.name, match?.food),
-      category: match?.food?.cat || '其他'
+      riskTags: getAiRiskTags(food.name, matchedFood),
+      category: matchedFood?.cat || '其他'
     };
-  });
+  }));
 
   const sourceStats = {
     total: items.length,
     matchedCount: items.filter(i => i.sourceType !== 'ai').length,
     customCount: items.filter(i => i.sourceType === 'custom').length,
+    localCount: items.filter(i => i.sourceType === 'known').length,
+    externalCount: items.filter(i => i.sourceType === 'fatsecret_cache' || i.sourceType === 'fatsecret_live').length,
     aiOnlyCount: items.filter(i => i.sourceType === 'ai').length
   };
 
@@ -691,8 +956,11 @@ function buildAiNote(baseEstimate, estimate) {
   if (baseEstimate.rawNote) notes.push(baseEstimate.rawNote);
 
   if (baseEstimate.sourceStats.matchedCount) {
-    const customText = baseEstimate.sourceStats.customCount ? `，其中自定义食物 ${baseEstimate.sourceStats.customCount} 项` : '';
-    notes.push(`已优先复用食物库 ${baseEstimate.sourceStats.matchedCount} 项${customText}。`);
+    const parts = [];
+    if (baseEstimate.sourceStats.localCount) parts.push(`本地食物库 ${baseEstimate.sourceStats.localCount} 项`);
+    if (baseEstimate.sourceStats.customCount) parts.push(`自定义食物 ${baseEstimate.sourceStats.customCount} 项`);
+    if (baseEstimate.sourceStats.externalCount) parts.push(`FatSecret ${baseEstimate.sourceStats.externalCount} 项`);
+    notes.push(`已优先复用 ${parts.join('，')}。`);
   }
   if (baseEstimate.sourceStats.aiOnlyCount) {
     notes.push(`仍有 ${baseEstimate.sourceStats.aiOnlyCount} 项未命中食物库，继续按 AI 估算。`);
@@ -903,7 +1171,7 @@ async function aiEstimate() {
     if (!match) throw new Error('AI 返回格式异常，请重试。');
     const result = normalizeAiRawResult(JSON.parse(match[0]));
     if (!result.foods || !result.total) throw new Error('AI 返回数据不完整，请重试。');
-    aiBaseEstimate = buildAiBaseEstimate(result, { hasImage: !!aiImageBase64, hasText: !!desc, description: desc });
+    aiBaseEstimate = await buildAiBaseEstimate(result, { hasImage: !!aiImageBase64, hasText: !!desc, description: desc });
     aiFollowupAnswers = Object.fromEntries(aiBaseEstimate.questions.map(q => [q.id, 'unknown']));
     aiLastResult = applyAiAdjustments(aiBaseEstimate, aiFollowupAnswers);
     renderAiResult(aiLastResult);
@@ -924,10 +1192,14 @@ function renderAiResult(r) {
   document.getElementById('aiRangeChip').textContent = `范围 ${r.ranges.kcal[0]}-${r.ranges.kcal[1]} kcal`;
   document.getElementById('aiMacroRangeChip').textContent = `P ${r.ranges.protein[0]}-${r.ranges.protein[1]} · C ${r.ranges.carb[0]}-${r.ranges.carb[1]} · F ${r.ranges.fat[0]}-${r.ranges.fat[1]}`;
   document.getElementById('aiConfidenceChip').textContent = `置信度 ${r.confidenceLabel}`;
-  document.getElementById('aiKnownChip').textContent = `复用食物库 ${r.sourceStats.matchedCount}/${r.sourceStats.total}${r.sourceStats.customCount ? ` · 自定义 ${r.sourceStats.customCount}` : ''}`;
+  document.getElementById('aiKnownChip').textContent = `已知命中 ${r.sourceStats.matchedCount}/${r.sourceStats.total}${r.sourceStats.externalCount ? ` · FatSecret ${r.sourceStats.externalCount}` : ''}${r.sourceStats.customCount ? ` · 自定义 ${r.sourceStats.customCount}` : ''}`;
   renderAiFollowups(r);
   document.getElementById('aiFoodList').innerHTML = r.foods.map(f => {
-    const sourceClass = f.sourceType === 'custom' ? 'custom' : (f.sourceType === 'known' ? 'known' : '');
+    const sourceClass = f.sourceType === 'custom'
+      ? 'custom'
+      : (f.sourceType === 'known'
+        ? 'known'
+        : ((f.sourceType === 'fatsecret_cache' || f.sourceType === 'fatsecret_live') ? 'external' : ''));
     const subParts = [
       `<span class="ai-source-tag ${sourceClass}">${f.sourceLabel}</span>`,
       f.matchedFoodName && f.matchedFoodName !== f.name ? `按 ${escapeHtml(f.matchedFoodName)} 基准` : '',
@@ -974,26 +1246,91 @@ async function addAiToRecord() {
 }
 
 // ===== 食物搜索 =====
-function searchFood(val) {
-  const q  = val.trim();
+function renderFoodDropdown(results) {
   const dd = document.getElementById('foodDropdown');
-  const nh = document.getElementById('noResultHint');
-  if (!q) { dd.classList.remove('open'); nh.style.display = 'none'; return; }
-  const results = getAllFoods().filter(f => f.name.includes(q)).slice(0, 12);
+  foodSearchResults = results;
+  foodFocusIdx = -1;
+  dd.innerHTML = results.map((f, i) => {
+    const sourceBadge = f.custom
+      ? '<span class="custom-badge">自定义</span>'
+      : (f.external
+        ? `<span class="food-source-chip${f.sourceType === 'fatsecret_cache' ? ' cache' : ''}">${f.sourceType === 'fatsecret_cache' ? 'FatSecret 缓存' : 'FatSecret'}</span>`
+        : '');
+    return `
+      <div class="food-option" data-idx="${i}"
+        onmousedown="selectSearchResult(${i})"
+        onmouseover="this.parentNode.querySelectorAll('.food-option').forEach(e=>e.classList.remove('focused'));this.classList.add('focused')">
+        <span>${escapeHtml(f.name)}${sourceBadge} <span style="font-size:11px;color:#bbb">${escapeHtml(f.cat || '其他')}</span></span>
+        <span class="food-option-kcal">${f.per100.kcal} kcal/100g</span>
+      </div>`;
+  }).join('');
+  dd.classList.add('open');
+}
+
+function showNoResultHint(query, message, loading = false) {
+  document.getElementById('noResultQuery').textContent = query;
+  document.getElementById('noResultSubtext').textContent = message || '可以先查 FatSecret；如果仍然没有，再手动录入到你的自定义食物库。';
+  const btn = document.getElementById('fatsecretLookupBtn');
+  btn.disabled = loading;
+  btn.textContent = loading ? '查询中…' : '查 FatSecret';
+  document.getElementById('noResultHint').style.display = 'block';
+}
+
+function hideNoResultHint() {
+  document.getElementById('noResultHint').style.display = 'none';
+  const btn = document.getElementById('fatsecretLookupBtn');
+  btn.disabled = false;
+  btn.textContent = '查 FatSecret';
+}
+
+function searchFood(val) {
+  const q = cleanLookupText(val);
+  const dd = document.getElementById('foodDropdown');
+  if (!q) { dd.classList.remove('open'); hideNoResultHint(); return; }
+
+  const normalizedQ = normalizeFoodToken(q);
+  const aliasMatch = matchKnownFood(q);
+  const results = uniqueFoods([
+    ...(aliasMatch ? [aliasMatch.food] : []),
+    ...getAllFoods().filter(f => {
+      const token = normalizeFoodToken(f.name);
+      return f.name.includes(q) || token.includes(normalizedQ) || normalizedQ.includes(token);
+    })
+  ]).slice(0, 12);
+
   if (!results.length) {
     dd.classList.remove('open');
-    document.getElementById('noResultQuery').textContent = q;
-    nh.style.display = 'block'; return;
+    showNoResultHint(q, '本地食物库和外部缓存都没命中，可以先查 FatSecret；如果还没有，再手动录入。');
+    return;
   }
-  nh.style.display = 'none'; foodFocusIdx = -1;
-  dd.innerHTML = results.map((f, i) => `
-    <div class="food-option" data-idx="${i}"
-      onmousedown="selectFood(getAllFoods().filter(x=>x.name.includes('${q.replace(/'/g,"\\'")}'))[${i}])"
-      onmouseover="this.parentNode.querySelectorAll('.food-option').forEach(e=>e.classList.remove('focused'));this.classList.add('focused')">
-      <span>${f.name}${f.custom?'<span class="custom-badge">自定义</span>':''} <span style="font-size:11px;color:#bbb">${f.cat}</span></span>
-      <span class="food-option-kcal">${f.per100.kcal} kcal/100g</span>
-    </div>`).join('');
-  dd.classList.add('open');
+  hideNoResultHint();
+  renderFoodDropdown(results);
+}
+
+async function searchFatSecretFromHint(event) {
+  event?.stopPropagation();
+  const q = cleanLookupText(document.getElementById('foodSearch').value);
+  if (!q) return;
+
+  showNoResultHint(q, '正在查 FatSecret…', true);
+  try {
+    const results = await searchFatSecretFoods(q);
+    if (!results.length) {
+      showNoResultHint(q, 'FatSecret 里也没找到这项食物，建议直接手动录入到你的自定义食物库。');
+      return;
+    }
+    hideNoResultHint();
+    renderFoodDropdown(results);
+    showToast(`已从 FatSecret 找到 ${results.length} 条候选`);
+  } catch (err) {
+    showNoResultHint(q, err.message || 'FatSecret 查询失败，可以稍后重试或手动录入。');
+  }
+}
+
+function selectSearchResult(idx) {
+  const food = foodSearchResults[idx];
+  if (!food) return;
+  selectFood(food, { lookupName: cleanLookupText(document.getElementById('foodSearch').value) || food.name });
 }
 
 function handleFoodKey(e) {
@@ -1007,14 +1344,25 @@ function handleFoodKey(e) {
   items.forEach((el, i) => el.classList.toggle('focused', i === foodFocusIdx));
 }
 
-function selectFood(food) {
+async function selectFood(food, options = {}) {
   if (!food) return;
-  currentFood = food;
-  document.getElementById('foodSearch').value = food.name;
+  let selected = food;
+  if (food.external && food.externalPending) {
+    try {
+      selected = await persistExternalFood(food, options.lookupName || food.name, 0.92);
+    } catch (err) {
+      console.warn('persist external food failed:', err.message);
+      selected = { ...food, externalPending: false };
+      upsertExternalFoodLocal(selected);
+    }
+  }
+
+  currentFood = selected;
+  document.getElementById('foodSearch').value = selected.name;
   document.getElementById('foodDropdown').classList.remove('open');
-  document.getElementById('noResultHint').style.display = 'none';
+  hideNoResultHint();
   const nameEl = document.getElementById('calcFoodName');
-  nameEl.innerHTML = food.name + (food.custom ? ' <span class="custom-badge">自定义</span>' : '');
+  nameEl.innerHTML = `${escapeHtml(selected.name)}${getFoodSourceBadgeHtml(selected)}`;
   document.getElementById('calcResultBox').classList.add('visible');
   document.getElementById('foodGrams').value = 100;
   updateCalc();
@@ -1058,7 +1406,7 @@ function openCustomForm() {
   const q = document.getElementById('foodSearch').value.trim();
   if (q) document.getElementById('cfName').value = q;
   document.getElementById('customFormBox').style.display = 'block';
-  document.getElementById('noResultHint').style.display = 'none';
+  hideNoResultHint();
   document.getElementById('cfName').focus();
 }
 function closeCustomForm() { document.getElementById('customFormBox').style.display = 'none'; }
@@ -1069,10 +1417,14 @@ async function handleSaveCustomFood() {
   if (!name) { alert('请填写食物名称'); return; }
   if (!kcal && kcal !== 0) { alert('请填写热量'); return; }
 
-  if (getAllFoods().some(f => f.name === name)) {
+  const existingCustom = customFoods.find(f => f.name === name);
+  const existingAny = getAllFoods().find(f => f.name === name);
+  if (existingCustom) {
     if (!confirm(`「${name}」已存在，是否覆盖？`)) return;
-    const ex = customFoods.find(f => f.name === name);
-    if (ex) { await deleteCustomFood(ex.id); customFoods = customFoods.filter(f => f.id !== ex.id); }
+    await deleteCustomFood(existingCustom.id);
+    customFoods = customFoods.filter(f => f.id !== existingCustom.id);
+  } else if (existingAny) {
+    if (!confirm(`「${name}」已在食物库中存在，是否另存为自定义并优先使用？`)) return;
   }
 
   const per100 = { kcal, protein: parseFloat(document.getElementById('cfProtein').value)||0,

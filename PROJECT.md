@@ -21,6 +21,9 @@ weight-tracker/
 │   ├── supabase.js         # Supabase 初始化、Auth 守卫、工具函数
 │   ├── db.js               # 所有数据库操作封装
 │   └── fooddb.js           # 静态数据（食物库、运动库、饮食模板）
+├── netlify/
+│   └── functions/
+│       └── fatsecret-search.js  # FatSecret 服务端代理（OAuth2 + search + food.get）
 ├── index.html              # 登录/注册页
 ├── dashboard.html          # 概览页（统计、目标保存、TDEE 设置/同步、体重图表、今日训练）
 ├── weight.html             # 体重记录页
@@ -46,11 +49,22 @@ weight-tracker/
 - 饮食记录页包含 AI 外卖热量识别、食物热量查询、自定义食物库、手动记录、按日期查看和最近记录。
 - AI 识别支持上传外卖截图或输入文字描述，返回总热量以及蛋白质 / 碳水 / 脂肪估算。
 - AI 识别现在会优先匹配 `custom_foods` 和内置 `FOOD_DB`，已知食物直接复用本地营养基准，只把未命中的食物继续交给 AI 估算。
+- AI 识别的未知食物会继续走 `external_food_matches / external_food_cache -> FatSecret -> AI 原始估算` 的兜底链路。
 - AI 识别结果新增“热量区间 / 三宏区间 / 置信度 / 食物库命中数”展示，帮助区分上下限和可靠性。
 - 对麻辣烫、沙拉、混合轻食碗这类误差较大的组合餐，AI 结果会自动出现“补充确认”项，用于修正主食份量、高热量配料、汤/酱摄入。
 - AI 识别结果区现在支持选择“记录日期 + 餐次”，不再固定只能添加到今天。
 - 食物热量查询区同样支持选择“记录日期 + 餐次”，可把计算结果直接写入任意日期。
+- 食物热量查询采用统一优先级：`custom_foods > FOOD_DB > external_food_cache > FatSecret`；FatSecret 命中后会写回映射和缓存，后续优先直接复用。
 - AI 识别和食物查询添加成功后，会自动切换“按日期查看”到刚刚写入的日期，方便立即核对记录。
+
+### 外部接口与部署
+- FatSecret 通过 Netlify Function `/.netlify/functions/fatsecret-search` 访问，前端不会直接暴露 `Client Secret`。
+- Netlify 需要配置环境变量：
+  - `FATSECRET_CLIENT_ID`
+  - `FATSECRET_CLIENT_SECRET`
+  - 可选：`FATSECRET_SCOPE`（默认 `basic`）
+  - 可选：`FATSECRET_REGION`、`FATSECRET_LANGUAGE`（只有账号已开 localization 时再配置）
+- 外部食物不会直接变成永久主库；项目会长期保存映射与短期缓存，仍以本地食物库为主。
 
 ### mealplan.html
 - 饮食计划页包含三部分：模板选择、本周饮食计划、每日营养目标。
@@ -70,6 +84,9 @@ weight-tracker/
 - 营养目标区读取并保存 `user_profile.kcal_target / protein_target / carb_target / fat_target`，保存后会实时刷新当天热量进度条。
 
 ## 最近更新
+- 2026-03-18：新增 FatSecret 服务端代理与 Netlify Functions 配置，饮食页本地未命中的食物可继续查询外部食物库。
+- 2026-03-18：新增 `external_food_matches / external_food_cache` 两张表，支持外部食物映射与短期营养缓存。
+- 2026-03-18：饮食页食物查询与 AI 识别统一为 `本地库 -> 外部缓存 -> FatSecret -> AI` 的优先级链路。
 - 2026-03-18：饮食页 AI 识别接入“已知食物优先复用”逻辑，命中 `custom_foods` / `FOOD_DB` 时直接按本地营养基准重算。
 - 2026-03-18：饮食页 AI 识别新增热量区间、三宏区间、置信度和高影响项补充确认，用于收窄组合餐估算误差。
 - 2026-03-18：饮食页 AI 识别结果区和食物热量查询区新增日期选择，支持添加到任意日期记录。
@@ -179,6 +196,46 @@ weight-tracker/
 | carb | numeric(6,1) | 每100g碳水 |
 | fat | numeric(6,1) | 每100g脂肪 |
 | created_at | timestamptz | 创建时间 |
+
+### external_food_matches
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| id | uuid (PK) | 自动生成 |
+| user_id | uuid | 关联 auth.users |
+| normalized_name | text | 归一化后的查询名称 |
+| original_name | text | 原始查询词 |
+| source | text | 当前固定为 `fatsecret` |
+| fatsecret_food_id | text | FatSecret `food_id` |
+| fatsecret_serving_id | text | FatSecret `serving_id` |
+| fatsecret_food_name | text | FatSecret 返回的食物名称 |
+| locale_region | text | 区域，默认 `US` |
+| locale_language | text | 语言，默认 `en` |
+| match_confidence | numeric(4,3) | 匹配置信度 |
+| last_synced_at | timestamptz | 最近同步时间 |
+| created_at | timestamptz | 创建时间 |
+| updated_at | timestamptz | 更新时间 |
+
+### external_food_cache
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| id | uuid (PK) | 自动生成 |
+| user_id | uuid | 关联 auth.users |
+| source | text | 当前固定为 `fatsecret` |
+| fatsecret_food_id | text | FatSecret `food_id` |
+| fatsecret_serving_id | text | FatSecret `serving_id` |
+| fatsecret_food_name | text | FatSecret 返回的食物名称 |
+| serving_description | text | 份量描述 |
+| serving_grams | numeric(8,2) | 份量克重 |
+| per100_kcal | integer | 换算后的每100g热量 |
+| per100_protein | numeric(6,1) | 换算后的每100g蛋白质 |
+| per100_carb | numeric(6,1) | 换算后的每100g碳水 |
+| per100_fat | numeric(6,1) | 换算后的每100g脂肪 |
+| locale_region | text | 区域，默认 `US` |
+| locale_language | text | 语言，默认 `en` |
+| cached_at | timestamptz | 缓存生成时间 |
+| expires_at | timestamptz | 缓存过期时间 |
+| created_at | timestamptz | 创建时间 |
+| updated_at | timestamptz | 更新时间 |
 
 ## 开发进度
 

@@ -5,6 +5,42 @@
 // ========== 工具函数 ==========
 const today = () => new Date().toISOString().split('T')[0];
 
+function normalizeFoodLookupName(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/（.*?）|\(.*?\)/g, '')
+    .replace(/[\s,，.。·/_\-+]+/g, '')
+    .replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
+}
+
+function mapExternalCacheRowToFood(row) {
+  const per100 = {
+    kcal: row.per100_kcal || 0,
+    protein: parseFloat(row.per100_protein) || 0,
+    carb: parseFloat(row.per100_carb) || 0,
+    fat: parseFloat(row.per100_fat) || 0
+  };
+  return {
+    id: row.id,
+    name: row.fatsecret_food_name,
+    cat: '外部',
+    external: true,
+    sourceType: 'fatsecret_cache',
+    sourceLabel: 'FatSecret 缓存',
+    per100,
+    fatsecret: {
+      foodId: row.fatsecret_food_id,
+      servingId: row.fatsecret_serving_id || '',
+      servingDescription: row.serving_description || '',
+      servingGrams: row.serving_grams ? parseFloat(row.serving_grams) : null,
+      region: row.locale_region || 'US',
+      language: row.locale_language || 'en',
+      cachedAt: row.cached_at,
+      expiresAt: row.expires_at
+    }
+  };
+}
+
 // 星期映射：1=周一 ... 7=周日
 const DAY_LABELS = ['','周一','周二','周三','周四','周五','周六','周日'];
 function dayIntToLabel(n) { return DAY_LABELS[n] || ''; }
@@ -304,6 +340,101 @@ async function deleteCustomFood(id) {
     .eq('id', id)
     .eq('user_id', currentUser.id);
   if (error) throw error;
+}
+
+// ========== 外部食物映射 / 缓存 ==========
+async function getExternalFoodCacheFoods() {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await sb
+    .from('external_food_cache')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .gt('expires_at', nowIso)
+    .order('updated_at', { ascending: false });
+  if (error) { console.error(error); return []; }
+  return (data || []).map(mapExternalCacheRowToFood);
+}
+
+async function getExternalFoodMatchByName(normalizedName, localeRegion = 'US', localeLanguage = 'en') {
+  const { data, error } = await sb
+    .from('external_food_matches')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('source', 'fatsecret')
+    .eq('normalized_name', normalizedName)
+    .eq('locale_region', localeRegion)
+    .eq('locale_language', localeLanguage)
+    .maybeSingle();
+  if (error) { console.error(error); return null; }
+  return data || null;
+}
+
+async function getExternalFoodCacheByIds(foodId, servingId = '', localeRegion = 'US', localeLanguage = 'en') {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await sb
+    .from('external_food_cache')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('source', 'fatsecret')
+    .eq('fatsecret_food_id', String(foodId))
+    .eq('fatsecret_serving_id', String(servingId || ''))
+    .eq('locale_region', localeRegion)
+    .eq('locale_language', localeLanguage)
+    .gt('expires_at', nowIso)
+    .maybeSingle();
+  if (error) { console.error(error); return null; }
+  return data ? mapExternalCacheRowToFood(data) : null;
+}
+
+async function saveExternalFoodMatch(payload) {
+  const row = {
+    user_id: currentUser.id,
+    normalized_name: normalizeFoodLookupName(payload.normalized_name),
+    original_name: payload.original_name || payload.normalized_name,
+    source: payload.source || 'fatsecret',
+    fatsecret_food_id: String(payload.fatsecret_food_id),
+    fatsecret_serving_id: String(payload.fatsecret_serving_id || ''),
+    fatsecret_food_name: payload.fatsecret_food_name,
+    locale_region: payload.locale_region || 'US',
+    locale_language: payload.locale_language || 'en',
+    match_confidence: payload.match_confidence == null ? 1 : payload.match_confidence,
+    last_synced_at: payload.last_synced_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await sb
+    .from('external_food_matches')
+    .upsert(row, { onConflict: 'user_id,source,normalized_name,locale_region,locale_language' });
+  if (error) throw error;
+}
+
+async function saveExternalFoodCache(payload) {
+  const row = {
+    user_id: currentUser.id,
+    source: payload.source || 'fatsecret',
+    fatsecret_food_id: String(payload.fatsecret_food_id),
+    fatsecret_serving_id: String(payload.fatsecret_serving_id || ''),
+    fatsecret_food_name: payload.fatsecret_food_name,
+    serving_description: payload.serving_description || '',
+    serving_grams: payload.serving_grams == null ? null : payload.serving_grams,
+    per100_kcal: payload.per100_kcal || 0,
+    per100_protein: payload.per100_protein || 0,
+    per100_carb: payload.per100_carb || 0,
+    per100_fat: payload.per100_fat || 0,
+    locale_region: payload.locale_region || 'US',
+    locale_language: payload.locale_language || 'en',
+    cached_at: payload.cached_at || new Date().toISOString(),
+    expires_at: payload.expires_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await sb
+    .from('external_food_cache')
+    .upsert(row, { onConflict: 'user_id,source,fatsecret_food_id,fatsecret_serving_id,locale_region,locale_language' })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapExternalCacheRowToFood(data);
 }
 
 // ========== 用户资料 ==========
