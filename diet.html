@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>减肥追踪 · 饮食</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .apikey-dot { display:inline-block;width:8px;height:8px;border-radius:50%;background:#cbd5e0;margin-right:5px;vertical-align:middle; }
+    .apikey-dot.ok { background:var(--primary); }
+    .food-search-wrap { position:relative;margin-bottom:12px; }
+    .food-search-wrap input { width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;transition:border 0.2s; }
+    .food-search-wrap input:focus { border-color:var(--primary);box-shadow:0 0 0 3px rgba(76,175,130,0.12); }
+    .food-dropdown { position:absolute;top:calc(100% + 4px);left:0;right:0;background:white;border:1.5px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:200;max-height:240px;overflow-y:auto;display:none; }
+    .food-dropdown.open { display:block; }
+    .food-option { padding:10px 16px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9; }
+    .food-option:last-child { border-bottom:none; }
+    .food-option:hover,.food-option.focused { background:var(--primary-light); }
+    .food-option-kcal { font-size:12px;color:var(--text-muted); }
+    .calc-result-box { background:#f8fafc;border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:none; }
+    .calc-result-box.visible { display:block; }
+    .custom-badge { display:inline-block;background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px; }
+    .no-result-hint { display:none;background:#fffbeb;border:1.5px dashed #f59e0b;border-radius:9px;padding:12px 16px;margin-bottom:10px;font-size:13px;color:#92400e;cursor:pointer; }
+    .no-result-hint:hover { background:#fef3c7; }
+    .meal-group { margin-bottom:8px; }
+    .meal-header { font-size:13px;font-weight:600;color:var(--text-muted);padding:6px 0 4px;display:flex;justify-content:space-between;align-items:center; }
+    .meal-kcal { color:var(--primary);font-size:13px; }
+    .ai-upload-area { border:2px dashed var(--border);border-radius:12px;padding:20px 14px;text-align:center;cursor:pointer;transition:all 0.2s;background:#fafafa;min-height:90px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px; }
+    .ai-upload-area:hover { border-color:var(--primary);background:var(--primary-light); }
+    .ai-upload-area.has-image { border-style:solid;border-color:var(--primary);padding:10px;background:white; }
+    .ai-remove-img { position:absolute;top:6px;right:8px;background:rgba(0,0,0,0.45);color:white;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:11px; }
+    .ai-spinner { display:inline-block;width:18px;height:18px;border:2px solid #e2e8f0;border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .ai-result-box { display:none;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:14px; }
+    .ai-result-box.show { display:block; }
+    .ai-result-header { background:linear-gradient(135deg,var(--primary),#3d9e6b);color:white;padding:12px 18px;display:flex;align-items:center;justify-content:space-between; }
+    .ai-food-row { display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #e8edf3;font-size:13px; }
+    .ai-food-row:last-child { border-bottom:none; }
+    .ai-food-name { flex:1;font-weight:600; }
+    .ai-food-kcal { font-weight:700;color:var(--primary);min-width:64px;text-align:right; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="dashboard.html">
+    <span class="logo-icon">🔥</span>
+    <span>减肥追踪</span>
+  </a>
+  <div class="header-right">
+    <span class="header-user" id="userEmail"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
+  </div>
+</header>
+
+<nav>
+  <a href="dashboard.html">📊 概览</a>
+  <a href="weight.html">⚖️ 体重</a>
+  <a href="diet.html" class="active">🥗 饮食</a>
+  <a href="training.html">💪 训练</a>
+  <a href="mealplan.html">📋 饮食计划</a>
+</nav>
+
+<main>
+
+  <!-- AI 设置 -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleApiPanel()">
+      <div class="card-title" style="margin-bottom:0">
+        <span class="apikey-dot" id="apikeyDot"></span>⚙️ AI 功能设置
+      </div>
+      <span id="apikeyArrow" style="font-size:12px;color:var(--text-muted)">▼</span>
+    </div>
+    <div id="apiKeyPanel" style="display:none;margin-top:14px">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;line-height:1.6">
+        AI 识别功能需要你自己的 <strong>Anthropic API Key</strong>，仅保存在本地浏览器。<br>
+        <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--primary)">没有 Key？点此获取 →</a>
+      </p>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-…"
+          style="flex:1;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:monospace">
+        <button class="btn btn-primary" onclick="saveApiKey()">保存</button>
+        <button class="btn btn-danger btn-sm" style="padding:9px 14px" onclick="clearApiKey()">清除</button>
+      </div>
+      <div id="apiKeyMsg" style="font-size:12px;margin-top:7px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- AI 拍照识别 -->
+  <div class="card">
+    <div class="card-title">📸 AI 外卖热量识别</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">上传外卖照片或文字描述，AI 帮你估算热量和营养</p>
+
+    <div style="position:relative">
+      <div class="ai-upload-area" id="aiUploadArea" onclick="document.getElementById('aiImageInput').click()">
+        <div id="aiUploadPrompt">
+          <div style="font-size:28px">📷</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text-muted)">点击上传食物照片</div>
+          <div style="font-size:12px;color:#bbb">支持 JPG、PNG、HEIC 等格式</div>
+        </div>
+        <img id="aiPreviewImg" style="display:none;max-width:100%;max-height:220px;border-radius:8px;object-fit:contain">
+        <button class="ai-remove-img" id="aiRemoveBtn" style="display:none" onclick="removeAiImage(event)">✕</button>
+      </div>
+      <input type="file" id="aiImageInput" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:12px 0">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <span style="font-size:12px;color:var(--text-muted)">或者文字描述</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+
+    <textarea id="aiDescription" rows="3" placeholder="例如：黄焖鸡米饭一份、半杯奶茶（少糖）"
+      style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;outline:none;resize:vertical"
+      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+
+    <button class="btn btn-primary" id="aiBtn" style="width:100%;margin-top:10px;padding:11px;font-size:15px" onclick="aiEstimate()">
+      🤖 开始 AI 估算
+    </button>
+    <div id="aiLoading" style="display:none;text-align:center;padding:16px;color:var(--text-muted);font-size:14px">
+      <span class="ai-spinner"></span>AI 正在分析食物热量…
+    </div>
+    <div id="aiError" style="display:none;background:#fee2e2;border:1px solid #fecaca;border-radius:9px;padding:12px 14px;margin-top:12px;font-size:13px;color:#dc2626;line-height:1.6"></div>
+
+    <div class="ai-result-box" id="aiResultBox">
+      <div class="ai-result-header">
+        <div>
+          <div style="font-size:12px;opacity:0.85">AI 估算 · 总热量</div>
+          <div style="font-size:30px;font-weight:800;line-height:1"><span id="aiTotalKcal">-</span> kcal</div>
+        </div>
+        <div style="text-align:right;font-size:12px;opacity:0.85">
+          蛋白 <span id="aiTotalProt">-</span>g<br>
+          碳水 <span id="aiTotalCarb">-</span>g&emsp;脂肪 <span id="aiTotalFat">-</span>g
+        </div>
+      </div>
+      <div style="padding:14px 16px;background:#f8fafc">
+        <div id="aiFoodList"></div>
+        <div id="aiNoteBox" style="font-size:11px;color:var(--text-muted);background:white;border-radius:7px;padding:8px 10px;margin:10px 0;border:1px solid var(--border);line-height:1.6"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="aiAddMeal" style="flex:1;min-width:100px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit">
+            <option value="早餐">🌅 早餐</option>
+            <option value="午餐">☀️ 午餐</option>
+            <option value="晚餐" selected>🌙 晚餐</option>
+            <option value="加餐">🍎 加餐</option>
+          </select>
+          <button class="btn btn-primary" onclick="addAiToRecord()">➕ 添加到今日记录</button>
+          <span id="aiAddMsg" style="font-size:12px;color:var(--primary);display:none;align-self:center">✅ 已添加！</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 食物热量查询 -->
+  <div class="card">
+    <div class="card-title">🔍 食物热量查询</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">搜索食物，输入克重，自动计算营养成分</p>
+
+    <div class="food-search-wrap">
+      <input type="text" id="foodSearch" placeholder="搜索食物，例如：鸡胸肉、燕麦、苹果…"
+        oninput="searchFood(this.value)" onkeydown="handleFoodKey(event)" autocomplete="off">
+      <div class="food-dropdown" id="foodDropdown"></div>
+    </div>
+
+    <div class="no-result-hint" id="noResultHint" onclick="openCustomForm()">
+      🔍 没找到「<span id="noResultQuery"></span>」— 点此<strong>手动录入</strong> ✏️
+    </div>
+
+    <div class="calc-result-box" id="calcResultBox">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin-bottom:0" id="calcFoodName">-</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" id="foodGrams" value="100" min="1" max="3000" step="5"
+            style="width:75px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-align:center;outline:none;font-family:inherit"
+            oninput="updateCalc()">
+          <span style="font-size:14px;color:var(--text-muted)">克</span>
+        </div>
+      </div>
+      <div class="macros-bar" style="margin-bottom:12px">
+        <div class="macro-item" style="flex:2">
+          <div class="macro-val" id="calcKcal" style="color:var(--primary)">-</div>
+          <div class="macro-label">热量 (kcal)</div>
+        </div>
+        <div class="macro-item protein"><div class="macro-val" id="calcProtein">-</div><div class="macro-label">蛋白质 (g)</div></div>
+        <div class="macro-item carb"><div class="macro-val" id="calcCarb">-</div><div class="macro-label">碳水 (g)</div></div>
+        <div class="macro-item fat"><div class="macro-val" id="calcFat">-</div><div class="macro-label">脂肪 (g)</div></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="calcAddMeal" style="flex:1;min-width:110px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:inherit">
+          <option value="早餐">🌅 早餐</option>
+          <option value="午餐">☀️ 午餐</option>
+          <option value="晚餐">🌙 晚餐</option>
+          <option value="加餐">🍎 加餐</option>
+        </select>
+        <button class="btn btn-primary" onclick="addCalcToRecord()">➕ 添加到今日记录</button>
+        <span id="calcAddMsg" style="font-size:12px;color:var(--primary);display:none">✅ 已添加！</span>
+      </div>
+    </div>
+
+    <!-- 自定义食物录入 -->
+    <div id="customFormBox" style="display:none;background:#f8fafc;border:1.5px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span style="font-size:14px;font-weight:700">✏️ 录入新食物（每100克）</span>
+        <button class="btn btn-sm" style="background:#f1f5f9;color:#718096" onclick="closeCustomForm()">✕ 关闭</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2"><label>食物名称 *</label><input type="text" id="cfName" placeholder="例如：老干妈炒饭"></div>
+        <div class="form-group"><label>分类</label>
+          <select id="cfCat">
+            <option>自定义</option><option>主食</option><option>蛋白质</option>
+            <option>蔬菜</option><option>水果</option><option>乳制品</option><option>其他</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>🔥 热量 (kcal) *</label><input type="number" id="cfKcal" placeholder="必填" min="0"></div>
+        <div class="form-group"><label>蛋白质 (g)</label><input type="number" id="cfProtein" placeholder="0" min="0" step="0.1"></div>
+        <div class="form-group"><label>碳水 (g)</label><input type="number" id="cfCarb" placeholder="0" min="0" step="0.1"></div>
+        <div class="form-group"><label>脂肪 (g)</label><input type="number" id="cfFat" placeholder="0" min="0" step="0.1"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn btn-primary" onclick="handleSaveCustomFood()">💾 保存到食物库</button>
+        <span id="cfSaveMsg" style="font-size:12px;color:var(--primary);display:none">✅ 已保存！</span>
+      </div>
+    </div>
+
+    <!-- 自定义食物库 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f8fafc;border:1.5px solid var(--border);border-radius:9px;cursor:pointer;margin-top:10px" onclick="toggleCustomLib()">
+      <span style="font-size:13px;font-weight:600;color:var(--text-muted)">
+        🗂️ 我的食物库 <span id="customLibCount" style="background:var(--primary);color:white;border-radius:10px;padding:1px 7px;font-size:11px">0</span>
+      </span>
+      <span id="customLibArrow" style="font-size:12px;color:var(--text-muted)">▼</span>
+    </div>
+    <div id="customLibList" style="display:none;margin-top:8px"></div>
+  </div>
+
+  <!-- 手动记录饮食 -->
+  <div class="card">
+    <div class="card-title">➕ 手动记录饮食</div>
+    <div class="form-row">
+      <div class="form-group"><label>日期</label><input type="date" id="dDate"></div>
+      <div class="form-group"><label>餐次</label>
+        <select id="dMeal">
+          <option value="早餐">🌅 早餐</option>
+          <option value="午餐">☀️ 午餐</option>
+          <option value="晚餐">🌙 晚餐</option>
+          <option value="加餐">🍎 加餐</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:2"><label>食物名称</label><input type="text" id="dFood" placeholder="例如 鸡胸肉、燕麦粥…"></div>
+      <div class="form-group"><label>热量 (kcal)</label><input type="number" id="dKcal" placeholder="350" min="0"></div>
+      <button class="btn btn-primary" style="flex-shrink:0;height:38px;align-self:flex-end" onclick="handleAddDiet()">记录</button>
+    </div>
+  </div>
+
+  <!-- 按日期查看 -->
+  <div class="card">
+    <div class="card-title">📅 按日期查看</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <input type="date" id="dViewDate" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;outline:none">
+      <button class="btn btn-primary" onclick="viewDietByDate()">查看</button>
+    </div>
+    <div id="dietByDay"></div>
+  </div>
+
+  <!-- 全部记录 -->
+  <div class="card">
+    <div class="card-title">📋 最近饮食记录</div>
+    <div id="dietList"></div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/db.js"></script>
+<script src="js/fooddb.js"></script>
+<script>
+
+let diets       = [];
+let customFoods = [];
+let currentFood = null;
+let foodFocusIdx = -1;
+let aiImageBase64 = null;
+let aiImageMime   = 'image/jpeg';
+let aiLastResult  = null;
+
+const mealOrder = ['早餐','午餐','晚餐','加餐'];
+const mealEmoji = { '早餐':'🌅','午餐':'☀️','晚餐':'🌙','加餐':'🍎' };
+
+// ===== 初始化 =====
+(async () => {
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const t = today();
+  document.getElementById('dDate').value     = t;
+  document.getElementById('dViewDate').value = t;
+  updateApikeyDot();
+
+  showLoading(true);
+  [diets, customFoods] = await Promise.all([getAllDiets(), getCustomFoods()]);
+  showLoading(false);
+
+  renderDietList();
+  viewDietByDate();
+  renderCustomLib();
+})();
+
+function getAllFoods() { return [...FOOD_DB, ...customFoods]; }
+
+// ===== API KEY =====
+function getApiKey() { return localStorage.getItem('anthropicKey') || ''; }
+function updateApikeyDot() {
+  const dot = document.getElementById('apikeyDot');
+  if (dot) dot.className = 'apikey-dot' + (getApiKey() ? ' ok' : '');
+}
+function toggleApiPanel() {
+  const panel = document.getElementById('apiKeyPanel');
+  const arrow = document.getElementById('apikeyArrow');
+  const open  = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  arrow.textContent   = open ? '▼' : '▲';
+}
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key.startsWith('sk-ant-')) { showApiMsg('❌ 格式不对，Key 应以 sk-ant- 开头', '#dc2626'); return; }
+  localStorage.setItem('anthropicKey', key);
+  document.getElementById('apiKeyInput').value = '';
+  showApiMsg('✅ 已保存！', 'var(--primary)');
+  updateApikeyDot();
+}
+function clearApiKey() {
+  localStorage.removeItem('anthropicKey');
+  document.getElementById('apiKeyInput').value = '';
+  showApiMsg('已清除', '#718096');
+  updateApikeyDot();
+}
+function showApiMsg(msg, color) {
+  const el = document.getElementById('apiKeyMsg');
+  el.textContent = msg; el.style.color = color; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// ===== AI 识别 =====
+function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  aiImageMime = file.type || 'image/jpeg';
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    aiImageBase64 = dataUrl.split(',')[1];
+    const img = document.getElementById('aiPreviewImg');
+    img.src = dataUrl; img.style.display = 'block';
+    document.getElementById('aiUploadPrompt').style.display = 'none';
+    document.getElementById('aiRemoveBtn').style.display = 'block';
+    document.getElementById('aiUploadArea').classList.add('has-image');
+    document.getElementById('aiResultBox').classList.remove('show');
+    document.getElementById('aiError').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+function removeAiImage(e) {
+  e.stopPropagation();
+  aiImageBase64 = null;
+  document.getElementById('aiPreviewImg').style.display = 'none';
+  document.getElementById('aiPreviewImg').src = '';
+  document.getElementById('aiUploadPrompt').style.display = 'flex';
+  document.getElementById('aiRemoveBtn').style.display = 'none';
+  document.getElementById('aiUploadArea').classList.remove('has-image');
+  document.getElementById('aiImageInput').value = '';
+}
+
+async function aiEstimate() {
+  const key  = getApiKey();
+  const desc = document.getElementById('aiDescription').value.trim();
+  if (!key) {
+    document.getElementById('apiKeyPanel').style.display = 'block';
+    document.getElementById('apikeyArrow').textContent = '▲';
+    document.getElementById('apiKeyInput').focus();
+    showAiError('⚠️ 请先填写 Anthropic API Key。');
+    return;
+  }
+  if (!aiImageBase64 && !desc) { showAiError('请上传照片或输入文字描述。'); return; }
+
+  const userContent = [];
+  if (aiImageBase64) userContent.push({ type:'image', source:{ type:'base64', media_type:aiImageMime, data:aiImageBase64 } });
+  userContent.push({ type:'text', text:`请分析${aiImageBase64?'图片中的':'以下'}食物，估算每种食物的热量和营养（基于中国常见份量）。${desc?'用户备注：'+desc:''}
+请只返回如下 JSON，不要其他文字：
+{"foods":[{"name":"食物名","weight":"克重","kcal":数字,"protein":数字,"carb":数字,"fat":数字}],"total":{"kcal":数字,"protein":数字,"carb":数字,"fat":数字},"note":"简短说明（不超过60字）"}
+所有数字为整数。` });
+
+  const btn = document.getElementById('aiBtn');
+  btn.disabled = true; btn.textContent = '⏳ 估算中…';
+  document.getElementById('aiLoading').style.display = 'block';
+  document.getElementById('aiResultBox').classList.remove('show');
+  document.getElementById('aiError').style.display = 'none';
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-api-key':key,
+        'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:1024, messages:[{ role:'user', content:userContent }] })
+    });
+    if (!resp.ok) { const err = await resp.json().catch(()=>({})); throw new Error(err.error?.message||`HTTP ${resp.status}`); }
+    const data = await resp.json();
+    const raw  = data.content?.[0]?.text || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI 返回格式异常，请重试。');
+    const result = JSON.parse(match[0]);
+    if (!result.foods || !result.total) throw new Error('AI 返回数据不完整，请重试。');
+    aiLastResult = result;
+    renderAiResult(result);
+  } catch(err) {
+    showAiError('❌ ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🤖 开始 AI 估算';
+    document.getElementById('aiLoading').style.display = 'none';
+  }
+}
+
+function renderAiResult(r) {
+  const t = r.total;
+  document.getElementById('aiTotalKcal').textContent = t.kcal;
+  document.getElementById('aiTotalProt').textContent = t.protein;
+  document.getElementById('aiTotalCarb').textContent = t.carb;
+  document.getElementById('aiTotalFat').textContent  = t.fat;
+  document.getElementById('aiFoodList').innerHTML = r.foods.map(f =>
+    `<div class="ai-food-row">
+      <div class="ai-food-name">${f.name}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${f.weight}</div>
+      <div style="font-size:11px;color:var(--text-muted);text-align:right;min-width:90px">蛋白${f.protein}g 碳水${f.carb}g 脂${f.fat}g</div>
+      <div class="ai-food-kcal">${f.kcal} kcal</div>
+    </div>`).join('');
+  document.getElementById('aiNoteBox').textContent = r.note || '';
+  document.getElementById('aiResultBox').classList.add('show');
+  document.getElementById('aiAddMsg').style.display = 'none';
+}
+
+function showAiError(msg) {
+  const el = document.getElementById('aiError');
+  el.innerHTML = msg; el.style.display = 'block';
+}
+
+async function addAiToRecord() {
+  if (!aiLastResult) return;
+  const meal = document.getElementById('aiAddMeal').value;
+  const rows = aiLastResult.foods.map(f => ({
+    date: today(), meal,
+    food: f.name + (f.weight ? `(${f.weight})` : ''),
+    kcal: f.kcal
+  }));
+  try {
+    const added = await addDiets(rows);
+    diets = [...diets, ...added].sort((a,b) => a.date.localeCompare(b.date));
+    document.getElementById('aiAddMsg').style.display = 'inline';
+    setTimeout(() => document.getElementById('aiAddMsg').style.display = 'none', 2500);
+    document.getElementById('dViewDate').value = today();
+    viewDietByDate(); renderDietList();
+    showToast('✅ 已添加到今日记录');
+  } catch(e) { alert('添加失败：' + e.message); }
+}
+
+// ===== 食物搜索 =====
+function searchFood(val) {
+  const q  = val.trim();
+  const dd = document.getElementById('foodDropdown');
+  const nh = document.getElementById('noResultHint');
+  if (!q) { dd.classList.remove('open'); nh.style.display = 'none'; return; }
+  const results = getAllFoods().filter(f => f.name.includes(q)).slice(0, 12);
+  if (!results.length) {
+    dd.classList.remove('open');
+    document.getElementById('noResultQuery').textContent = q;
+    nh.style.display = 'block'; return;
+  }
+  nh.style.display = 'none'; foodFocusIdx = -1;
+  dd.innerHTML = results.map((f, i) => `
+    <div class="food-option" data-idx="${i}"
+      onmousedown="selectFood(getAllFoods().filter(x=>x.name.includes('${q.replace(/'/g,"\\'")}'))[${i}])"
+      onmouseover="this.parentNode.querySelectorAll('.food-option').forEach(e=>e.classList.remove('focused'));this.classList.add('focused')">
+      <span>${f.name}${f.custom?'<span class="custom-badge">自定义</span>':''} <span style="font-size:11px;color:#bbb">${f.cat}</span></span>
+      <span class="food-option-kcal">${f.per100.kcal} kcal/100g</span>
+    </div>`).join('');
+  dd.classList.add('open');
+}
+
+function handleFoodKey(e) {
+  const dd    = document.getElementById('foodDropdown');
+  const items = dd.querySelectorAll('.food-option');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); foodFocusIdx = Math.min(foodFocusIdx+1, items.length-1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); foodFocusIdx = Math.max(foodFocusIdx-1, 0); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (items[foodFocusIdx>=0?foodFocusIdx:0]) items[foodFocusIdx>=0?foodFocusIdx:0].dispatchEvent(new MouseEvent('mousedown')); return; }
+  else if (e.key === 'Escape') { dd.classList.remove('open'); return; }
+  items.forEach((el, i) => el.classList.toggle('focused', i === foodFocusIdx));
+}
+
+function selectFood(food) {
+  if (!food) return;
+  currentFood = food;
+  document.getElementById('foodSearch').value = food.name;
+  document.getElementById('foodDropdown').classList.remove('open');
+  document.getElementById('noResultHint').style.display = 'none';
+  const nameEl = document.getElementById('calcFoodName');
+  nameEl.innerHTML = food.name + (food.custom ? ' <span class="custom-badge">自定义</span>' : '');
+  document.getElementById('calcResultBox').classList.add('visible');
+  document.getElementById('foodGrams').value = 100;
+  updateCalc();
+}
+
+function updateCalc() {
+  if (!currentFood) return;
+  const g = parseFloat(document.getElementById('foodGrams').value) || 100;
+  const r = g / 100;
+  const p = currentFood.per100;
+  document.getElementById('calcKcal').textContent    = Math.round(p.kcal * r);
+  document.getElementById('calcProtein').textContent = (p.protein * r).toFixed(1);
+  document.getElementById('calcCarb').textContent    = (p.carb * r).toFixed(1);
+  document.getElementById('calcFat').textContent     = (p.fat * r).toFixed(1);
+}
+
+async function addCalcToRecord() {
+  if (!currentFood) return;
+  const g    = parseFloat(document.getElementById('foodGrams').value) || 100;
+  const meal = document.getElementById('calcAddMeal').value;
+  const name = `${currentFood.name}(${g}g)`;
+  const kcal = Math.round(currentFood.per100.kcal * g / 100);
+  try {
+    const entry = await addDiet(today(), meal, name, kcal);
+    diets = [...diets, entry].sort((a,b) => a.date.localeCompare(b.date));
+    document.getElementById('calcAddMsg').style.display = 'inline';
+    setTimeout(() => document.getElementById('calcAddMsg').style.display = 'none', 2000);
+    document.getElementById('dViewDate').value = today();
+    viewDietByDate(); renderDietList();
+  } catch(e) { alert('添加失败：' + e.message); }
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.food-search-wrap')) document.getElementById('foodDropdown').classList.remove('open');
+});
+
+// ===== 自定义食物 =====
+function openCustomForm() {
+  const q = document.getElementById('foodSearch').value.trim();
+  if (q) document.getElementById('cfName').value = q;
+  document.getElementById('customFormBox').style.display = 'block';
+  document.getElementById('noResultHint').style.display = 'none';
+  document.getElementById('cfName').focus();
+}
+function closeCustomForm() { document.getElementById('customFormBox').style.display = 'none'; }
+
+async function handleSaveCustomFood() {
+  const name = document.getElementById('cfName').value.trim();
+  const kcal = parseFloat(document.getElementById('cfKcal').value);
+  if (!name) { alert('请填写食物名称'); return; }
+  if (!kcal && kcal !== 0) { alert('请填写热量'); return; }
+
+  if (getAllFoods().some(f => f.name === name)) {
+    if (!confirm(`「${name}」已存在，是否覆盖？`)) return;
+    const ex = customFoods.find(f => f.name === name);
+    if (ex) { await deleteCustomFood(ex.id); customFoods = customFoods.filter(f => f.id !== ex.id); }
+  }
+
+  const per100 = { kcal, protein: parseFloat(document.getElementById('cfProtein').value)||0,
+    carb: parseFloat(document.getElementById('cfCarb').value)||0, fat: parseFloat(document.getElementById('cfFat').value)||0 };
+
+  try {
+    const food = await saveCustomFood(name, document.getElementById('cfCat').value, per100.kcal, per100.protein, per100.carb, per100.fat);
+    customFoods.push(food);
+    document.getElementById('cfSaveMsg').style.display = 'inline';
+    setTimeout(() => document.getElementById('cfSaveMsg').style.display = 'none', 2500);
+    selectFood(food);
+    renderCustomLib();
+    ['cfName','cfKcal','cfProtein','cfCarb','cfFat'].forEach(id => document.getElementById(id).value = '');
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
+async function handleDeleteCustomFood(id) {
+  if (!confirm('确认删除这条自定义食物？')) return;
+  try {
+    await deleteCustomFood(id);
+    customFoods = customFoods.filter(f => f.id !== id);
+    if (currentFood && currentFood.id === id) { currentFood = null; document.getElementById('calcResultBox').classList.remove('visible'); }
+    renderCustomLib();
+    showToast('已删除');
+  } catch(e) { alert('删除失败：' + e.message); }
+}
+
+function toggleCustomLib() {
+  const el = document.getElementById('customLibList');
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  document.getElementById('customLibArrow').textContent = isOpen ? '▼' : '▲';
+  if (!isOpen) renderCustomLib();
+}
+
+function renderCustomLib() {
+  document.getElementById('customLibCount').textContent = customFoods.length;
+  const el = document.getElementById('customLibList');
+  if (!customFoods.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px"><div class="empty-icon">🗂️</div><div class="empty-text">还没有自定义食物</div></div>';
+    return;
+  }
+  el.innerHTML = [...customFoods].reverse().map(f => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:9px;margin-bottom:8px;background:white">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">${f.name} <span class="custom-badge">自定义</span></div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">每100g：热量 <strong>${f.per100.kcal}</strong>kcal · 蛋白 <strong>${f.per100.protein}</strong>g · 碳水 <strong>${f.per100.carb}</strong>g · 脂肪 <strong>${f.per100.fat}</strong>g</div>
+      </div>
+      <button class="btn btn-sm" style="background:var(--primary-light);color:var(--primary)" onclick="selectFood(customFoods.find(x=>x.id==='${f.id}'))">查询</button>
+      <button class="btn btn-danger btn-sm" onclick="handleDeleteCustomFood('${f.id}')">删除</button>
+    </div>`).join('');
+}
+
+// ===== 手动记录 =====
+async function handleAddDiet() {
+  const date = document.getElementById('dDate').value;
+  const meal = document.getElementById('dMeal').value;
+  const food = document.getElementById('dFood').value.trim();
+  const kcal = document.getElementById('dKcal').value;
+  if (!date || !food) { alert('请填写日期和食物名称'); return; }
+
+  const btn = document.querySelector('button[onclick="handleAddDiet()"]');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const entry = await addDiet(date, meal, food, kcal ? parseInt(kcal) : 0);
+    diets = [...diets, entry].sort((a,b) => a.date.localeCompare(b.date));
+    document.getElementById('dFood').value = '';
+    document.getElementById('dKcal').value = '';
+    document.getElementById('dViewDate').value = date;
+    viewDietByDate(); renderDietList();
+    showToast('✅ 饮食已记录');
+  } catch(e) { alert('记录失败：' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '记录'; }
+}
+
+// ===== 删除饮食 =====
+async function handleDeleteDiet(id) {
+  if (!confirm('确认删除？')) return;
+  try {
+    await deleteDiet(id);
+    diets = diets.filter(d => d.id !== id);
+    viewDietByDate(); renderDietList();
+    showToast('已删除');
+  } catch(e) { alert('删除失败：' + e.message); }
+}
+
+// ===== 按日期查看 =====
+function viewDietByDate() {
+  const date    = document.getElementById('dViewDate').value;
+  const el      = document.getElementById('dietByDay');
+  const entries = diets.filter(d => d.date === date);
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🥗</div><div class="empty-text">该日期无饮食记录</div></div>';
+    return;
+  }
+  const byMeal    = {};
+  mealOrder.forEach(m => byMeal[m] = []);
+  entries.forEach(e => { if (!byMeal[e.meal]) byMeal[e.meal] = []; byMeal[e.meal].push(e); });
+  const totalKcal = entries.reduce((s, e) => s + (e.kcal || 0), 0);
+  let html = `<div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">合计热量：<strong style="color:var(--primary);font-size:16px">${totalKcal}</strong> kcal</div>`;
+  mealOrder.forEach(m => {
+    if (!byMeal[m] || !byMeal[m].length) return;
+    const mKcal = byMeal[m].reduce((s, e) => s + (e.kcal || 0), 0);
+    html += `<div class="meal-group">
+      <div class="meal-header"><span>${mealEmoji[m]} ${m}</span><span class="meal-kcal">${mKcal} kcal</span></div>
+      ${byMeal[m].map(e => `<div class="list-item" style="padding:8px 0">
+        <div class="list-item-main"><div class="list-item-title">${e.food}</div></div>
+        <div style="color:var(--text-muted);font-size:13px">${e.kcal || 0} kcal</div>
+        <button class="btn btn-danger btn-sm" onclick="handleDeleteDiet('${e.id}')">删除</button>
+      </div>`).join('')}
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+// ===== 全部记录 =====
+function renderDietList() {
+  const el = document.getElementById('dietList');
+  if (!diets.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🥗</div><div class="empty-text">还没有饮食记录</div></div>';
+    return;
+  }
+  const byDate = {};
+  diets.forEach(d => { if (!byDate[d.date]) byDate[d.date] = []; byDate[d.date].push(d); });
+  el.innerHTML = Object.keys(byDate).sort().reverse().slice(0, 7).map(date => {
+    const entries = byDate[date];
+    const total   = entries.reduce((s, e) => s + (e.kcal || 0), 0);
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:6px">${date} · ${total} kcal</div>
+      ${entries.map(e => `<div class="list-item" style="padding:8px 0">
+        <div class="list-item-main">
+          <div class="list-item-title">${mealEmoji[e.meal]||''} ${e.food}</div>
+          <div class="list-item-sub">${e.meal}</div>
+        </div>
+        <div style="color:var(--text-muted);font-size:13px">${e.kcal || 0} kcal</div>
+        <button class="btn btn-danger btn-sm" onclick="handleDeleteDiet('${e.id}')">删除</button>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+</script>
+</body>
+</html>

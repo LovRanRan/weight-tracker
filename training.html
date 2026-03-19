@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>减肥追踪 · 训练</title>
+  <link rel="stylesheet" href="css/main.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="dashboard.html">
+    <span class="logo-icon">🔥</span>
+    <span>减肥追踪</span>
+  </a>
+  <div class="header-right">
+    <span class="header-user" id="userEmail"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
+  </div>
+</header>
+
+<nav>
+  <a href="dashboard.html">📊 概览</a>
+  <a href="weight.html">⚖️ 体重</a>
+  <a href="diet.html">🥗 饮食</a>
+  <a href="training.html" class="active">💪 训练</a>
+  <a href="mealplan.html">📋 饮食计划</a>
+</nav>
+
+<main>
+
+  <!-- 本周进度 -->
+  <div class="card">
+    <div class="card-title">📅 本周训练进度</div>
+    <div id="weekGrid" class="week-grid"></div>
+    <div id="weekStats" style="margin-top:12px;font-size:14px;color:#718096"></div>
+  </div>
+
+  <!-- 添加训练 -->
+  <div class="card">
+    <div class="card-title">➕ 添加训练计划</div>
+
+    <!-- 快速添加（从运动库） -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:13px;font-weight:600;color:#4a5568;display:block;margin-bottom:6px">从运动库快速添加</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="quickExercise" style="flex:1;min-width:160px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#2d3748">
+          <option value="">选择运动项目…</option>
+        </select>
+        <select id="quickDay" style="width:110px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#2d3748">
+          <option value="1">周一</option>
+          <option value="2">周二</option>
+          <option value="3">周三</option>
+          <option value="4">周四</option>
+          <option value="5">周五</option>
+          <option value="6">周六</option>
+          <option value="7">周日</option>
+        </select>
+        <input type="number" id="quickDuration" placeholder="时长(分钟)" min="5" max="300"
+          style="width:120px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px">
+        <input type="number" id="quickWeight" placeholder="体重(kg)" min="30" max="300" step="0.1"
+          style="width:110px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px">
+        <button class="btn btn-primary" onclick="handleQuickAdd()">快速添加</button>
+      </div>
+      <div id="quickKcalPreview" style="margin-top:6px;font-size:13px;color:#4CAF82;height:18px"></div>
+    </div>
+
+    <div style="border-top:1px solid #f1f5f9;padding-top:16px">
+      <label style="font-size:13px;font-weight:600;color:#4a5568;display:block;margin-bottom:10px">手动填写</label>
+      <div class="form-row">
+        <div class="form-group">
+          <label>训练名称</label>
+          <input type="text" id="wName" placeholder="例如 跑步 / 力量训练">
+        </div>
+        <div class="form-group">
+          <label>训练日</label>
+          <select id="wDay">
+            <option value="1">周一</option>
+            <option value="2">周二</option>
+            <option value="3">周三</option>
+            <option value="4">周四</option>
+            <option value="5">周五</option>
+            <option value="6">周六</option>
+            <option value="7">周日</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>时长 (分钟)</label>
+          <input type="number" id="wDuration" placeholder="45" min="5" max="300">
+        </div>
+        <div class="form-group">
+          <label>强度</label>
+          <select id="wIntensity">
+            <option value="低强度">低强度</option>
+            <option value="中等" selected>中等</option>
+            <option value="高强度">高强度</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>消耗卡路里 (估算)</label>
+          <input type="number" id="wKcal" placeholder="自动计算或手填" min="0">
+        </div>
+        <div class="form-group" style="flex:2">
+          <label>备注 / 训练内容</label>
+          <input type="text" id="wDetail" placeholder="例如：5km慢跑 / 胸背肩各3组">
+        </div>
+        <button class="btn btn-primary"
+          style="flex-shrink:0;height:38px;align-self:flex-end"
+          onclick="handleAddWorkout()">
+          添加
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 本周训练计划 -->
+  <div class="card">
+    <div class="card-title">🗓️ 本周训练安排</div>
+    <div id="workoutsByDay"></div>
+  </div>
+
+  <!-- 训练统计图表 -->
+  <div class="card" id="chartCard" style="display:none">
+    <div class="card-title">📊 本周消耗热量</div>
+    <div class="chart-container" style="height:200px">
+      <canvas id="trainChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 所有训练计划列表 -->
+  <div class="card">
+    <div class="card-title">📋 全部训练计划</div>
+    <div id="allWorkouts"></div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/db.js"></script>
+<script src="js/fooddb.js"></script>
+<script>
+
+let workouts  = [];
+let completed = {};
+let chartInst = null;
+
+// day integer: 1=周一 ... 7=周日
+const DAY_NAMES = ['','周一','周二','周三','周四','周五','周六','周日'];
+// 今天是星期几（1-7）
+const jsDay = new Date().getDay();
+const TODAY_INT = jsDay === 0 ? 7 : jsDay;
+
+// ===== 初始化 =====
+(async () => {
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  populateExerciseSelect();
+  bindQuickCalc();
+
+  showLoading(true);
+  [workouts, completed] = await Promise.all([getWorkouts(), getCompleted()]);
+  showLoading(false);
+
+  renderAll();
+})();
+
+function renderAll() {
+  renderWeekGrid();
+  renderByDay();
+  renderAllList();
+  renderChart();
+}
+
+// ===== 填充运动库下拉 =====
+function populateExerciseSelect() {
+  const sel = document.getElementById('quickExercise');
+  const cats = {};
+  EXERCISE_DB.forEach(e => {
+    if (!cats[e.cat]) cats[e.cat] = [];
+    cats[e.cat].push(e);
+  });
+  Object.keys(cats).forEach(cat => {
+    const grp = document.createElement('optgroup');
+    grp.label = cat;
+    cats[cat].forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.name;
+      opt.dataset.met = e.met;
+      opt.textContent = `${e.name} (MET ${e.met})`;
+      grp.appendChild(opt);
+    });
+    sel.appendChild(grp);
+  });
+}
+
+// ===== 快速添加卡路里预览 =====
+function bindQuickCalc() {
+  const calc = () => {
+    const sel  = document.getElementById('quickExercise');
+    const opt  = sel.options[sel.selectedIndex];
+    const dur  = parseFloat(document.getElementById('quickDuration').value) || 0;
+    const wt   = parseFloat(document.getElementById('quickWeight').value) || 70;
+    const prev = document.getElementById('quickKcalPreview');
+    if (!opt || !opt.dataset.met || !dur) { prev.textContent = ''; return; }
+    const met  = parseFloat(opt.dataset.met);
+    const kcal = Math.round(met * wt * (dur / 60));
+    prev.textContent = `预估消耗：${kcal} kcal`;
+  };
+  ['quickExercise','quickDuration','quickWeight'].forEach(id =>
+    document.getElementById(id).addEventListener('input', calc)
+  );
+}
+
+// ===== 快速添加 =====
+async function handleQuickAdd() {
+  const sel  = document.getElementById('quickExercise');
+  const opt  = sel.options[sel.selectedIndex];
+  const name = sel.value;
+  const dayInt = parseInt(document.getElementById('quickDay').value);
+  const dur  = parseInt(document.getElementById('quickDuration').value) || 0;
+  const wt   = parseFloat(document.getElementById('quickWeight').value) || 70;
+
+  if (!name) { alert('请选择运动项目'); return; }
+  if (!dur)  { alert('请填写训练时长'); return; }
+
+  const met  = opt?.dataset?.met ? parseFloat(opt.dataset.met) : 3;
+  const kcal = Math.round(met * wt * (dur / 60));
+
+  await saveWorkout(name, dayInt, dur, '中等', '', kcal);
+  document.getElementById('quickExercise').value = '';
+  document.getElementById('quickDuration').value = '';
+  document.getElementById('quickKcalPreview').textContent = '';
+}
+
+// ===== 手动添加 =====
+async function handleAddWorkout() {
+  const name      = document.getElementById('wName').value.trim();
+  const dayInt    = parseInt(document.getElementById('wDay').value);
+  const duration  = parseInt(document.getElementById('wDuration').value) || 0;
+  const intensity = document.getElementById('wIntensity').value;
+  const kcal      = parseInt(document.getElementById('wKcal').value) || 0;
+  const detail    = document.getElementById('wDetail').value.trim();
+
+  if (!name) { alert('请填写训练名称'); return; }
+
+  await saveWorkout(name, dayInt, duration, intensity, detail, kcal);
+  ['wName','wDuration','wKcal','wDetail'].forEach(id =>
+    document.getElementById(id).value = ''
+  );
+}
+
+async function saveWorkout(name, dayInt, duration, intensity, detail, kcal) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+
+  try {
+    const w = await addWorkout(name, dayInt, duration, intensity, detail, kcal);
+    workouts.push(w);
+    renderAll();
+    showToast('✅ 训练已添加');
+  } catch(e) {
+    alert('添加失败：' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '添加'; }
+  }
+}
+
+// ===== 删除训练 =====
+async function handleDeleteWorkout(id) {
+  if (!confirm('确认删除此训练？')) return;
+  try {
+    await deleteWorkout(id);
+    workouts = workouts.filter(w => w.id !== id);
+    renderAll();
+    showToast('已删除');
+  } catch(e) {
+    alert('删除失败：' + e.message);
+  }
+}
+
+// ===== 切换完成状态 =====
+async function handleToggle(workoutId, btn) {
+  const weekKey  = getWeekKey();
+  const cur      = completed[weekKey]?.[workoutId] || false;
+  btn.disabled   = true;
+
+  try {
+    const newState = await toggleDone(workoutId, cur);
+    if (!completed[weekKey]) completed[weekKey] = {};
+    if (newState) {
+      completed[weekKey][workoutId] = true;
+    } else {
+      delete completed[weekKey][workoutId];
+    }
+    renderAll();
+    showToast(newState ? '✅ 已完成！' : '↩️ 取消完成');
+  } catch(e) {
+    alert('更新失败：' + e.message);
+    btn.disabled = false;
+  }
+}
+
+// ===== 本周格子 =====
+function renderWeekGrid() {
+  const weekKey = getWeekKey();
+  const doneSet = completed[weekKey] || {};
+  const totalThisWeek = workouts.length;
+  const doneCount = Object.keys(doneSet).filter(id => workouts.find(w => w.id === id)).length;
+
+  const el = document.getElementById('weekGrid');
+  el.innerHTML = [1,2,3,4,5,6,7].map(dayInt => {
+    const label = DAY_NAMES[dayInt];
+    const dayWorkouts = workouts.filter(w => w.day === dayInt);
+    const allDone  = dayWorkouts.length > 0 && dayWorkouts.every(w => doneSet[w.id]);
+    const hasDone  = dayWorkouts.some(w => doneSet[w.id]);
+    const isToday  = dayInt === TODAY_INT;
+
+    let cls = 'week-day';
+    if (allDone)      cls += ' done';
+    else if (hasDone) cls += ' partial';
+    if (isToday)      cls += ' today';
+
+    const count = dayWorkouts.length;
+    return `<div class="${cls}">
+      <div class="week-day-label">${label}</div>
+      <div class="week-day-count">${count > 0 ? count + '项' : '休息'}</div>
+      ${allDone ? '<div style="font-size:18px">✅</div>' : hasDone ? '<div style="font-size:18px">🔄</div>' : count > 0 ? '<div style="font-size:18px">⏳</div>' : '<div style="font-size:18px">😴</div>'}
+    </div>`;
+  }).join('');
+
+  const statsEl = document.getElementById('weekStats');
+  const pct = totalThisWeek > 0 ? Math.round(doneCount / totalThisWeek * 100) : 0;
+  statsEl.innerHTML = totalThisWeek > 0
+    ? `本周计划 <strong>${totalThisWeek}</strong> 项训练，已完成 <strong>${doneCount}</strong> 项（${pct}%）`
+    : '还没有本周训练计划，快去添加吧！';
+}
+
+// ===== 按天渲染 =====
+function renderByDay() {
+  const el      = document.getElementById('workoutsByDay');
+  const weekKey = getWeekKey();
+  const doneSet = completed[weekKey] || {};
+
+  if (!workouts.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">💪</div>
+      <div class="empty-text">还没有训练计划，添加你的第一个训练吧！</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = [1,2,3,4,5,6,7].map(dayInt => {
+    const label = DAY_NAMES[dayInt];
+    const items = workouts.filter(w => w.day === dayInt);
+    if (!items.length) return '';
+
+    const rows = items.map(w => {
+      const done = doneSet[w.id] || false;
+      const intBadge = {
+        '低强度': 'badge-blue',
+        '中等':   'badge-green',
+        '高强度': 'badge-red'
+      }[w.intensity] || 'badge-green';
+
+      return `<div class="workout-item ${done ? 'workout-done' : ''}">
+        <div class="workout-check">
+          <button class="check-btn ${done ? 'checked' : ''}"
+            onclick="handleToggle('${w.id}', this)"
+            title="${done ? '取消完成' : '标记完成'}">
+            ${done ? '✓' : ''}
+          </button>
+        </div>
+        <div class="workout-info">
+          <div class="workout-name">${w.name}</div>
+          ${w.detail ? `<div class="workout-detail">${w.detail}</div>` : ''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+            ${w.duration ? `<span class="badge badge-gray">${w.duration} 分钟</span>` : ''}
+            <span class="badge ${intBadge}">${w.intensity}</span>
+            ${w.kcal ? `<span class="badge badge-orange">🔥 ${w.kcal} kcal</span>` : ''}
+          </div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="handleDeleteWorkout('${w.id}')">删除</button>
+      </div>`;
+    }).join('');
+
+    const isToday = dayInt === TODAY_INT;
+    return `<div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:700;color:${isToday ? 'var(--primary)' : '#4a5568'};margin-bottom:8px">
+        ${label}${isToday ? ' <span style="background:var(--primary);color:#fff;font-size:11px;padding:1px 6px;border-radius:10px">今天</span>' : ''}
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
+// ===== 全部训练列表 =====
+function renderAllList() {
+  const el = document.getElementById('allWorkouts');
+  if (!workouts.length) {
+    el.innerHTML = '<div style="color:#a0aec0;font-size:14px;padding:8px 0">暂无训练计划</div>';
+    return;
+  }
+
+  const sorted = [...workouts].sort((a, b) => a.day - b.day);
+  el.innerHTML = sorted.map(w => `
+    <div class="list-item">
+      <div class="list-item-main">
+        <div class="list-item-title">${w.name}
+          <span class="badge badge-gray" style="font-size:11px;margin-left:6px">${w.dayLabel}</span>
+        </div>
+        <div class="list-item-sub">
+          ${w.duration ? w.duration + ' 分钟 · ' : ''}${w.intensity}${w.detail ? ' · ' + w.detail : ''}
+        </div>
+      </div>
+      <div class="list-item-value">${w.kcal ? w.kcal + ' kcal' : '-'}</div>
+      <button class="btn btn-danger btn-sm" onclick="handleDeleteWorkout('${w.id}')">删除</button>
+    </div>
+  `).join('');
+}
+
+// ===== 图表：本周每天消耗 =====
+function renderChart() {
+  const weekKey = getWeekKey();
+  const doneSet = completed[weekKey] || {};
+  const cardEl  = document.getElementById('chartCard');
+
+  const completedKcal = [1,2,3,4,5,6,7].map(dayInt =>
+    workouts
+      .filter(w => w.day === dayInt && doneSet[w.id])
+      .reduce((s, w) => s + (w.kcal || 0), 0)
+  );
+
+  const hasData = completedKcal.some(v => v > 0);
+  cardEl.style.display = hasData ? '' : 'none';
+  if (!hasData) return;
+
+  const ctx = document.getElementById('trainChart').getContext('2d');
+  if (chartInst) chartInst.destroy();
+
+  const labels = [1,2,3,4,5,6,7].map(d => DAY_NAMES[d]);
+  chartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '已完成消耗 (kcal)',
+        data: completedKcal,
+        backgroundColor: completedKcal.map(v => v > 0 ? 'rgba(76,175,130,0.7)' : 'rgba(226,232,240,0.5)'),
+        borderColor: completedKcal.map(v => v > 0 ? '#4CAF82' : '#e2e8f0'),
+        borderWidth: 1.5,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.parsed.y} kcal` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#718096', font: { size: 11 } } },
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#718096', font: { size: 11 } }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+</script>
+
+<style>
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .week-grid { grid-template-columns: repeat(4, 1fr); }
+}
+.week-day {
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 6px;
+  text-align: center;
+  transition: all .2s;
+  background: #fafafa;
+}
+.week-day.today { border-color: var(--primary); background: rgba(76,175,130,0.05); }
+.week-day.done { border-color: var(--primary); background: rgba(76,175,130,0.12); }
+.week-day.partial { border-color: #f6c90e; background: rgba(246,201,14,0.08); }
+.week-day-label { font-size: 12px; font-weight: 700; color: #4a5568; margin-bottom: 4px; }
+.week-day-count { font-size: 11px; color: #a0aec0; margin-bottom: 4px; }
+
+.workout-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; background: #f8fafc; border-radius: 10px;
+  margin-bottom: 8px; border: 1px solid #e2e8f0; transition: opacity .2s;
+}
+.workout-item.workout-done { opacity: .65; background: #f0faf5; border-color: #c6f0da; }
+.workout-check { flex-shrink: 0; }
+.check-btn {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid #cbd5e0;
+  background: #fff; cursor: pointer; font-size: 14px; color: #fff;
+  display: flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.check-btn.checked { background: var(--primary); border-color: var(--primary); color: #fff; }
+.check-btn:hover { border-color: var(--primary); }
+.workout-info { flex: 1; min-width: 0; }
+.workout-name { font-size: 15px; font-weight: 600; color: #2d3748; }
+.workout-detail { font-size: 13px; color: #718096; margin-top: 2px; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-gray   { background: #edf2f7; color: #4a5568; }
+.badge-green  { background: #c6f6d5; color: #276749; }
+.badge-blue   { background: #bee3f8; color: #2b6cb0; }
+.badge-red    { background: #fed7d7; color: #9b2c2c; }
+.badge-orange { background: #feebc8; color: #c05621; }
+</style>
+
+</body>
+</html>

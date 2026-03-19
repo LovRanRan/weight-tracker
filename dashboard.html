@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>减肥追踪 · 概览</title>
+  <link rel="stylesheet" href="css/main.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="dashboard.html">
+    <span class="logo-icon">🔥</span>
+    <span>减肥追踪</span>
+  </a>
+  <div class="header-right">
+    <span class="header-user" id="userEmail"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
+  </div>
+</header>
+
+<nav>
+  <a href="dashboard.html" class="active">📊 概览</a>
+  <a href="weight.html">⚖️ 体重</a>
+  <a href="diet.html">🥗 饮食</a>
+  <a href="training.html">💪 训练</a>
+  <a href="mealplan.html">📋 饮食计划</a>
+</nav>
+
+<main>
+
+  <!-- 统计卡片 -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="statCurrent">--</div>
+      <div class="stat-label">当前体重 (kg)</div>
+    </div>
+    <div class="stat-card accent">
+      <div class="stat-value" id="statChange">--</div>
+      <div class="stat-label">本周变化 (kg)</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-value" id="statKcal">--</div>
+      <div class="stat-label">今日热量 (kcal)</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-value" id="statWorkouts">--</div>
+      <div class="stat-label">本周训练 (次)</div>
+    </div>
+  </div>
+
+  <!-- 减肥目标 -->
+  <div class="card">
+    <div class="card-title">🎯 减肥目标</div>
+    <div class="goal-section">
+      <div class="goal-item">
+        <span class="goal-label">起始体重</span>
+        <input type="number" id="startWeight" placeholder="kg" min="30" max="300" step="0.1" onchange="saveGoals()">
+        <span class="goal-label">kg</span>
+      </div>
+      <div class="goal-item">
+        <span class="goal-label">目标体重</span>
+        <input type="number" id="goalWeight" placeholder="kg" min="30" max="300" step="0.1" onchange="saveGoals()">
+        <span class="goal-label">kg</span>
+      </div>
+      <div class="goal-item">
+        <span class="goal-label">目标日期</span>
+        <input type="date" id="goalDate" onchange="saveGoals()" style="width:150px">
+      </div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span>减重进度</span>
+        <span id="progressText">设置目标后显示进度</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TDEE 估算 -->
+  <div class="card">
+    <div class="card-title">🧮 每日营养需求估算 (TDEE)</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+      基于 Mifflin-St Jeor 公式，结合活动量和目标，给出个性化热量与营养建议
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+      <div class="form-group">
+        <label>性别</label>
+        <select id="tdeeGender" onchange="calcTDEE()">
+          <option value="male">男</option>
+          <option value="female">女</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>年龄（岁）</label>
+        <input type="number" id="tdeeAge" placeholder="25" min="10" max="100" oninput="calcTDEE()">
+      </div>
+      <div class="form-group">
+        <label>身高（cm）</label>
+        <input type="number" id="tdeeHeight" placeholder="170" min="100" max="250" oninput="calcTDEE()">
+      </div>
+      <div class="form-group">
+        <label>体重（kg）</label>
+        <input type="number" id="tdeeWeight" placeholder="自动读取" min="30" max="300" step="0.1" oninput="calcTDEE()">
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>日常活动量</label>
+        <select id="tdeeActivity" onchange="calcTDEE()">
+          <option value="1.2">🪑 久坐（几乎不运动）</option>
+          <option value="1.375">🚶 轻度（每周 1-3 次）</option>
+          <option value="1.55" selected>🏃 中度（每周 3-5 次）</option>
+          <option value="1.725">💪 高强度（每周 6-7 次）</option>
+          <option value="1.9">🔥 极高强度（每天训练）</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:span 2">
+        <label>目标</label>
+        <select id="tdeeGoal" onchange="calcTDEE()">
+          <option value="fast_loss">🏋️ 快速减脂（缺口 -500 kcal）</option>
+          <option value="loss" selected>🥗 稳健减脂（缺口 -300 kcal）</option>
+          <option value="maintain">⚖️ 维持体重</option>
+          <option value="gain">💪 增肌增重（盈余 +200 kcal）</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- TDEE 结果 -->
+    <div id="tdeeResult" style="display:none;background:linear-gradient(135deg,#f0faf5,#e8f5ee);border:1.5px solid var(--primary);border-radius:12px;padding:18px 20px">
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">建议每日摄入热量</div>
+        <div style="font-size:42px;font-weight:800;color:var(--primary);line-height:1" id="tdeeTarget">—</div>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px">kcal / 天</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+        <div style="background:white;border-radius:8px;padding:10px 8px;text-align:center;border:1px solid var(--border)">
+          <div style="font-size:18px;font-weight:700" id="tdeeBMR">—</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">BMR (kcal)</div>
+        </div>
+        <div style="background:white;border-radius:8px;padding:10px 8px;text-align:center;border:1px solid var(--border)">
+          <div style="font-size:18px;font-weight:700" id="tdeeTDEE">—</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">TDEE (kcal)</div>
+        </div>
+        <div style="background:white;border-radius:8px;padding:10px 8px;text-align:center;border:1px solid var(--border)">
+          <div style="font-size:18px;font-weight:700" id="tdeeDelta">—</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">缺口/盈余</div>
+        </div>
+      </div>
+
+      <div class="macros-bar" style="margin-bottom:14px">
+        <div class="macro-item protein">
+          <div class="macro-val" id="macroProtein">—</div>
+          <div class="macro-label">蛋白质 (g)</div>
+        </div>
+        <div class="macro-item carb">
+          <div class="macro-val" id="macroCarb">—</div>
+          <div class="macro-label">碳水 (g)</div>
+        </div>
+        <div class="macro-item fat">
+          <div class="macro-val" id="macroFat">—</div>
+          <div class="macro-label">脂肪 (g)</div>
+        </div>
+      </div>
+
+      <div id="tdeeNote" style="font-size:12px;color:var(--text-muted);background:white;border-radius:7px;padding:8px 10px;margin-bottom:12px;line-height:1.6"></div>
+
+      <button class="btn btn-primary" style="width:100%" onclick="syncTDEEToGoals()">
+        📥 同步到饮食计划目标
+      </button>
+      <div id="tdeeSyncMsg" style="text-align:center;font-size:12px;color:var(--primary);margin-top:6px;display:none">
+        ✅ 已同步！可前往「饮食计划」查看
+      </div>
+    </div>
+  </div>
+
+  <!-- 体重趋势图 -->
+  <div class="card">
+    <div class="card-title">📈 近期体重趋势</div>
+    <div class="chart-container">
+      <canvas id="dashChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 今日训练 -->
+  <div class="card">
+    <div class="card-title">📅 今日训练安排</div>
+    <div id="todayWorkouts"></div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/db.js"></script>
+<script>
+
+// ===== 页面数据 =====
+let weights   = [];
+let diets     = [];
+let completed = {};
+let workouts  = [];
+let profile   = null;   // 直接用 user_profile 行
+let dashChartInstance = null;
+
+const GOAL_CONFIG = {
+  fast_loss: { delta:-500, proteinFactor:2.4, fatPct:0.25, label:'快速减脂' },
+  loss:      { delta:-300, proteinFactor:2.2, fatPct:0.25, label:'稳健减脂' },
+  maintain:  { delta:0,    proteinFactor:1.8, fatPct:0.28, label:'维持体重' },
+  gain:      { delta:+200, proteinFactor:2.0, fatPct:0.25, label:'增肌增重' },
+};
+const TDEE_NOTES = {
+  fast_loss: '⚠️ 热量缺口 -500 kcal，减重较快（约每周 0.5kg），建议不超过 8 周，需配合力量训练保留肌肉。',
+  loss:      '✅ 热量缺口 -300 kcal，稳健减脂（约每周 0.3kg），不易反弹，适合长期坚持。',
+  maintain:  '⚖️ 摄入 = 消耗，用于体重维持或健康饮食参考。',
+  gain:      '💪 热量盈余 +200 kcal，配合规律力量训练，有助于增肌。建议每月增重 0.5-1kg。',
+};
+
+function intensityBadge(i) {
+  if (i === '轻松' || i === '低强度') return '<span class="badge badge-green">轻松</span>';
+  if (i === '高强度') return '<span class="badge badge-red">高强度</span>';
+  return '<span class="badge badge-orange">中等</span>';
+}
+
+// ===== 初始化 =====
+(async () => {
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  showLoading(true);
+
+  const [w, d, wo, c, p] = await Promise.all([
+    getWeights(),
+    getAllDiets(),
+    getWorkouts(),
+    getCompleted(),
+    getProfile(),
+  ]);
+
+  weights   = w;
+  diets     = d;
+  workouts  = wo;
+  completed = c;
+  profile   = p;
+
+  showLoading(false);
+  renderAll();
+})();
+
+function renderAll() {
+  renderStats();
+  loadGoals();
+  loadTDEEProfile();
+  calcTDEE();
+  renderChart();
+  renderTodayWorkouts();
+}
+
+// ===== 统计卡片 =====
+function renderStats() {
+  const cur = weights.length ? weights[weights.length - 1].value : null;
+  document.getElementById('statCurrent').textContent = cur ?? '--';
+
+  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split('T')[0];
+  const weekW   = weights.filter(w => w.date >= weekAgo);
+  if (weekW.length >= 2) {
+    const chg = (weekW[weekW.length-1].value - weekW[0].value).toFixed(1);
+    const el  = document.getElementById('statChange');
+    el.textContent = (chg > 0 ? '+' : '') + chg;
+    el.style.color = chg > 0 ? '#dc2626' : '#16a34a';
+  } else {
+    document.getElementById('statChange').textContent = '--';
+  }
+
+  const todayKcal = diets.filter(d => d.date === today()).reduce((s, d) => s + (d.kcal || 0), 0);
+  document.getElementById('statKcal').textContent = todayKcal || '--';
+
+  const wk   = getWeekKey();
+  const done = completed[wk] ? Object.keys(completed[wk]).length : 0;
+  document.getElementById('statWorkouts').textContent = done;
+
+  updateProgress();
+}
+
+// ===== 目标（直接用 user_profile 列）=====
+function loadGoals() {
+  document.getElementById('startWeight').value = profile?.start_weight || '';
+  document.getElementById('goalWeight').value  = profile?.target_weight || '';
+  document.getElementById('goalDate').value    = profile?.target_date || '';
+}
+
+function updateProgress() {
+  const s   = parseFloat(profile?.start_weight);
+  const t   = parseFloat(profile?.target_weight);
+  const cur = weights.length ? weights[weights.length-1].value : null;
+  if (!s || !t || !cur) {
+    document.getElementById('progressText').textContent = '设置目标后显示进度';
+    document.getElementById('progressFill').style.width = '0%';
+    return;
+  }
+  const total = Math.abs(s - t);
+  const done  = Math.abs(s - cur);
+  const pct   = Math.min(100, Math.round(done / total * 100));
+  document.getElementById('progressText').textContent =
+    `已减 ${(s - cur).toFixed(1)}kg / 目标减 ${(s - t).toFixed(1)}kg (${pct}%)`;
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+async function saveGoals() {
+  const fields = {
+    start_weight:  parseFloat(document.getElementById('startWeight').value) || null,
+    target_weight: parseFloat(document.getElementById('goalWeight').value) || null,
+    target_date:   document.getElementById('goalDate').value || null,
+  };
+  try {
+    await saveProfile(fields);
+    if (!profile) profile = {};
+    Object.assign(profile, fields);
+    updateProgress();
+  } catch(e) { console.error(e); }
+}
+
+// ===== TDEE =====
+function loadTDEEProfile() {
+  document.getElementById('tdeeGender').value   = profile?.gender   || 'male';
+  document.getElementById('tdeeAge').value      = profile?.age      || '';
+  document.getElementById('tdeeHeight').value   = profile?.height   || '';
+  document.getElementById('tdeeActivity').value = profile?.activity || '1.55';
+  document.getElementById('tdeeGoal').value     = profile?.goal     || 'loss';
+  if (!document.getElementById('tdeeWeight').value) {
+    document.getElementById('tdeeWeight').value =
+      (weights.length ? weights[weights.length-1].value : '');
+  }
+}
+
+function calcTDEE() {
+  const gender   = document.getElementById('tdeeGender').value;
+  const age      = parseFloat(document.getElementById('tdeeAge').value);
+  const height   = parseFloat(document.getElementById('tdeeHeight').value);
+  const weight   = parseFloat(document.getElementById('tdeeWeight').value);
+  const activity = parseFloat(document.getElementById('tdeeActivity').value);
+  const goal     = document.getElementById('tdeeGoal').value;
+
+  if (!age || !height || !weight) {
+    document.getElementById('tdeeResult').style.display = 'none';
+    return;
+  }
+
+  const bmr = gender === 'male'
+    ? Math.round(10 * weight + 6.25 * height - 5 * age + 5)
+    : Math.round(10 * weight + 6.25 * height - 5 * age - 161);
+
+  const tdee   = Math.round(bmr * activity);
+  const cfg    = GOAL_CONFIG[goal];
+  const target = tdee + cfg.delta;
+
+  const protein = Math.round(weight * cfg.proteinFactor);
+  const fatG    = Math.round((target * cfg.fatPct) / 9);
+  const carbG   = Math.max(0, Math.round((target - protein * 4 - fatG * 9) / 4));
+
+  document.getElementById('tdeeResult').style.display = 'block';
+  document.getElementById('tdeeTarget').textContent   = target;
+  document.getElementById('tdeeBMR').textContent      = bmr;
+  document.getElementById('tdeeTDEE').textContent     = tdee;
+  document.getElementById('tdeeDelta').textContent    = (cfg.delta >= 0 ? '+' : '') + cfg.delta;
+  document.getElementById('macroProtein').textContent = protein + 'g';
+  document.getElementById('macroCarb').textContent    = carbG + 'g';
+  document.getElementById('macroFat').textContent     = fatG + 'g';
+  document.getElementById('tdeeNote').textContent     = TDEE_NOTES[goal];
+  document.getElementById('tdeeSyncMsg').style.display = 'none';
+
+  window._tdeeLatest = { kcal: target, protein, carb: carbG, fat: fatG };
+
+  // 自动保存 TDEE 设置（防抖 1 秒）
+  clearTimeout(window._tdeeSaveTimer);
+  window._tdeeSaveTimer = setTimeout(async () => {
+    try {
+      await saveProfile({
+        gender, age, height,
+        activity: document.getElementById('tdeeActivity').value,
+        goal
+      });
+      if (!profile) profile = {};
+      Object.assign(profile, { gender, age, height, activity: document.getElementById('tdeeActivity').value, goal });
+    } catch(e) { console.error(e); }
+  }, 1000);
+}
+
+async function syncTDEEToGoals() {
+  if (!window._tdeeLatest) { alert('请先填写身体数据'); return; }
+  const { kcal, protein, carb, fat } = window._tdeeLatest;
+  try {
+    await saveProfile({
+      kcal_target: kcal,
+      protein_target: protein,
+      carb_target: carb,
+      fat_target: fat
+    });
+    if (!profile) profile = {};
+    Object.assign(profile, { kcal_target: kcal, protein_target: protein, carb_target: carb, fat_target: fat });
+    document.getElementById('tdeeSyncMsg').style.display = 'block';
+    setTimeout(() => document.getElementById('tdeeSyncMsg').style.display = 'none', 3000);
+  } catch(e) { alert('同步失败：' + e.message); }
+}
+
+// ===== 体重图表 =====
+function renderChart() {
+  const ctx = document.getElementById('dashChart').getContext('2d');
+  if (dashChartInstance) dashChartInstance.destroy();
+
+  if (!weights.length) {
+    document.getElementById('dashChart').parentElement.innerHTML =
+      '<div class="empty-state"><div class="empty-icon">📈</div><div class="empty-text">记录体重后，趋势图将显示在这里</div></div>';
+    return;
+  }
+
+  const recent = weights.slice(-14);
+  dashChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: recent.map(w => w.date.slice(5)),
+      datasets: [{
+        data: recent.map(w => w.value),
+        borderColor: '#4CAF82',
+        backgroundColor: 'rgba(76,175,130,0.08)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#4CAF82',
+        pointRadius: 3.5,
+        tension: 0.35,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#718096', font: { size: 11 } } },
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#718096', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ===== 今日训练 =====
+// workouts.day 是 1=周一...7=周日，JS getDay() 是 0=周日...6=周六
+function renderTodayWorkouts() {
+  const jsDay    = new Date().getDay();
+  const todayInt = jsDay === 0 ? 7 : jsDay;  // 转换为 1-7
+  const wk       = getWeekKey();
+  const todays   = workouts.filter(w => w.day === todayInt);
+  const el       = document.getElementById('todayWorkouts');
+
+  if (!todays.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px"><div class="empty-icon">🎉</div><div class="empty-text">今天是休息日，好好恢复！</div></div>';
+    return;
+  }
+
+  el.innerHTML = todays.map(w => {
+    const done = completed[wk] && completed[wk][w.id];
+    return `<div class="workout-item ${done ? 'done' : ''}">
+      <div class="workout-checkbox" onclick="handleToggle('${w.id}')">${done ? '✓' : ''}</div>
+      <div class="workout-info">
+        <div class="workout-name">${w.name} ${intensityBadge(w.intensity)}</div>
+        <div class="workout-detail">${w.duration ? '⏱ ' + w.duration + '　' : ''}${w.detail || ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function handleToggle(workoutId) {
+  const wk      = getWeekKey();
+  const isDone  = completed[wk] && completed[wk][workoutId];
+  const newDone = await toggleDone(workoutId, isDone);
+  if (!completed[wk]) completed[wk] = {};
+  if (newDone) {
+    completed[wk][workoutId] = true;
+  } else {
+    delete completed[wk][workoutId];
+  }
+  renderStats();
+  renderTodayWorkouts();
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>减肥追踪 · 饮食计划</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+<header>
+  <a class="logo" href="dashboard.html">
+    <span class="logo-icon">🔥</span>
+    <span>减肥追踪</span>
+  </a>
+  <div class="header-right">
+    <span class="header-user" id="userEmail"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">退出</button>
+  </div>
+</header>
+
+<nav>
+  <a href="dashboard.html">📊 概览</a>
+  <a href="weight.html">⚖️ 体重</a>
+  <a href="diet.html">🥗 饮食</a>
+  <a href="training.html">💪 训练</a>
+  <a href="mealplan.html" class="active">📋 饮食计划</a>
+</nav>
+
+<main>
+
+  <!-- 模板选择 -->
+  <div class="card">
+    <div class="card-title">🍽️ 选择饮食模板</div>
+    <p style="font-size:13px;color:#718096;margin-bottom:12px">选择一个模板自动填充一天的饮食计划，也可以在下方手动编辑。</p>
+    <div id="templateList" class="template-grid"></div>
+  </div>
+
+  <!-- 周计划 -->
+  <div class="card">
+    <div class="card-title">📅 本周饮食计划</div>
+    <div class="week-tabs" id="dayTabs"></div>
+    <div id="dayPlan"></div>
+  </div>
+
+  <!-- 营养目标 -->
+  <div class="card">
+    <div class="card-title">🎯 每日营养目标</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>目标热量 (kcal)</label>
+        <input type="number" id="goalKcal" placeholder="1800" min="800" max="5000">
+      </div>
+      <div class="form-group">
+        <label>蛋白质 (g)</label>
+        <input type="number" id="goalProtein" placeholder="120" min="10" max="500">
+      </div>
+      <div class="form-group">
+        <label>碳水 (g)</label>
+        <input type="number" id="goalCarb" placeholder="200" min="10" max="800">
+      </div>
+      <div class="form-group">
+        <label>脂肪 (g)</label>
+        <input type="number" id="goalFat" placeholder="60" min="10" max="300">
+      </div>
+      <button class="btn btn-primary" style="flex-shrink:0;height:38px;align-self:flex-end" onclick="handleSaveGoals()">保存目标</button>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/db.js"></script>
+<script src="js/fooddb.js"></script>
+<script>
+
+let planRows  = [];   // 从 getMealPlan() 返回的扁平数组
+let grouped   = {};   // groupMealPlan(planRows) → { date: { meal_name: [...] } }
+let profile   = null;
+let activeDay = null;
+
+const MEALS = ['早餐','午餐','晚餐','加餐'];
+
+// ===== 日期工具 =====
+function getWeekDates() {
+  const now = new Date();
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon);
+    d.setDate(mon.getDate() + i);
+    return d.toISOString().split('T')[0];
+  });
+}
+
+const DAYS_LABEL = ['周一','周二','周三','周四','周五','周六','周日'];
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+// ===== 初始化 =====
+(async () => {
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  showLoading(true);
+  [planRows, profile] = await Promise.all([getMealPlan(), getProfile()]);
+  grouped = groupMealPlan(planRows);
+  showLoading(false);
+
+  // 加载营养目标
+  if (profile) {
+    if (profile.kcal_target)    document.getElementById('goalKcal').value    = profile.kcal_target;
+    if (profile.protein_target) document.getElementById('goalProtein').value = profile.protein_target;
+    if (profile.carb_target)    document.getElementById('goalCarb').value    = profile.carb_target;
+    if (profile.fat_target)     document.getElementById('goalFat').value     = profile.fat_target;
+  }
+
+  renderTemplates();
+  renderDayTabs();
+})();
+
+// ===== 模板卡片 =====
+function renderTemplates() {
+  const el = document.getElementById('templateList');
+  el.innerHTML = MEAL_TEMPLATES.map((tpl, i) => `
+    <div class="template-card" onclick="applyTemplate(${i})">
+      <div class="template-name">${tpl.name}</div>
+      <div class="template-desc">${tpl.desc || summarizeTemplate(tpl)}</div>
+    </div>
+  `).join('');
+}
+
+function summarizeTemplate(tpl) {
+  const total = MEALS.reduce((sum, m) =>
+    sum + (tpl[m] || []).reduce((s, f) => s + (f.kcal || 0), 0), 0);
+  return `约 ${total} kcal / 天`;
+}
+
+// ===== 应用模板到当前选中日 =====
+async function applyTemplate(idx) {
+  const tpl = MEAL_TEMPLATES[idx];
+  if (!tpl) return;
+  if (!activeDay) { alert('请先在下方选择一天'); return; }
+
+  // 先删除该天所有数据
+  try {
+    showLoading(true);
+    await clearMealPlanDay(activeDay);
+
+    // 构建批量插入的行
+    const rows = [];
+    MEALS.forEach(m => {
+      (tpl[m] || []).forEach(f => {
+        rows.push({
+          date: activeDay,
+          meal_name: m,
+          food_name: f.name || f.food || '',
+          kcal: f.kcal || 0,
+          protein: f.protein || 0,
+          carb: f.carb || 0,
+          fat: f.fat || 0
+        });
+      });
+    });
+
+    let newRows = [];
+    if (rows.length) {
+      newRows = await addMealPlanBatch(rows);
+    }
+
+    // 更新本地数据
+    planRows = planRows.filter(r => r.date !== activeDay);
+    planRows = [...planRows, ...newRows];
+    grouped = groupMealPlan(planRows);
+
+    showLoading(false);
+    renderDayPlan();
+    showToast(`✅ 已应用「${tpl.name}」到 ${activeDay}`);
+  } catch(e) {
+    showLoading(false);
+    alert('应用失败：' + e.message);
+  }
+}
+
+// ===== 星期标签 =====
+function renderDayTabs() {
+  const dates = getWeekDates();
+  const todayD = todayStr();
+  const el = document.getElementById('dayTabs');
+
+  activeDay = activeDay || todayD;
+  if (!dates.includes(activeDay)) activeDay = todayD;
+
+  el.innerHTML = dates.map((d, i) => {
+    const isActive = d === activeDay;
+    const isToday  = d === todayD;
+    const label = DAYS_LABEL[i];
+    const short = d.slice(5);
+
+    return `<button class="day-tab ${isActive ? 'active' : ''} ${isToday ? 'today' : ''}"
+      onclick="selectDay('${d}')">
+      <div class="day-tab-label">${label}</div>
+      <div class="day-tab-date">${short}</div>
+    </button>`;
+  }).join('');
+
+  renderDayPlan();
+}
+
+function selectDay(d) {
+  activeDay = d;
+  renderDayTabs();
+}
+
+// ===== 当天计划 =====
+function renderDayPlan() {
+  const el = document.getElementById('dayPlan');
+  const dayData = grouped[activeDay] || {};
+
+  const goalKcal = parseInt(document.getElementById('goalKcal').value) || 0;
+  let totalKcal = 0;
+
+  let html = '';
+
+  MEALS.forEach(meal => {
+    const items = dayData[meal] || [];
+    const mealKcal = items.reduce((s, f) => s + (f.kcal || 0), 0);
+    totalKcal += mealKcal;
+
+    html += `<div class="meal-section">
+      <div class="meal-header">
+        <span class="meal-title">${mealIcon(meal)} ${meal}</span>
+        <span class="meal-kcal">${mealKcal} kcal</span>
+      </div>`;
+
+    if (items.length) {
+      html += items.map(f => `
+        <div class="meal-food-item">
+          <div class="food-name">${f.food_name}</div>
+          <div class="food-macros">${f.protein ? 'P' + f.protein + 'g ' : ''}${f.carb ? 'C' + f.carb + 'g ' : ''}${f.fat ? 'F' + f.fat + 'g' : ''}</div>
+          <div class="food-kcal">${f.kcal || 0} kcal</div>
+          <button class="btn-icon" onclick="removeFood('${f.id}')" title="删除">✕</button>
+        </div>`
+      ).join('');
+    } else {
+      html += `<div class="meal-empty">暂无食物，使用模板或手动添加</div>`;
+    }
+
+    html += `<div class="meal-add-row">
+        <input type="text" class="add-food-input" id="addName_${meal}" placeholder="食物名称">
+        <input type="number" class="add-food-input" id="addKcal_${meal}" placeholder="kcal" style="width:80px" min="0">
+        <input type="number" class="add-food-input" id="addProt_${meal}" placeholder="蛋白g" style="width:70px" min="0" step="0.1">
+        <input type="number" class="add-food-input" id="addCarb_${meal}" placeholder="碳水g" style="width:70px" min="0" step="0.1">
+        <input type="number" class="add-food-input" id="addFat_${meal}" placeholder="脂肪g" style="width:70px" min="0" step="0.1">
+        <button class="btn btn-primary btn-sm" onclick="addFood('${meal}')">添加</button>
+      </div>
+    </div>`;
+  });
+
+  // 热量总计
+  const pct = goalKcal > 0 ? Math.round(totalKcal / goalKcal * 100) : 0;
+  const barColor = pct > 110 ? '#e53e3e' : pct > 90 ? '#f6c90e' : 'var(--primary)';
+
+  html = `<div class="day-summary">
+    <div class="summary-total">总计 <strong>${totalKcal}</strong> kcal
+      ${goalKcal ? ` / ${goalKcal} kcal 目标 (${pct}%)` : ''}
+    </div>
+    ${goalKcal ? `<div class="summary-bar"><div class="summary-bar-fill" style="width:${Math.min(pct,100)}%;background:${barColor}"></div></div>` : ''}
+  </div>` + html;
+
+  el.innerHTML = html;
+}
+
+function mealIcon(meal) {
+  return { '早餐':'🌅', '午餐':'☀️', '晚餐':'🌙', '加餐':'🍪' }[meal] || '🍽️';
+}
+
+// ===== 手动添加食物 =====
+async function addFood(meal) {
+  const food_name = document.getElementById(`addName_${meal}`).value.trim();
+  const kcal      = parseInt(document.getElementById(`addKcal_${meal}`).value) || 0;
+  const protein   = parseFloat(document.getElementById(`addProt_${meal}`).value) || 0;
+  const carb      = parseFloat(document.getElementById(`addCarb_${meal}`).value) || 0;
+  const fat       = parseFloat(document.getElementById(`addFat_${meal}`).value) || 0;
+
+  if (!food_name) { alert('请填写食物名称'); return; }
+
+  try {
+    const row = await addMealPlanItem(activeDay, meal, food_name, kcal, protein, carb, fat);
+    planRows.push(row);
+    grouped = groupMealPlan(planRows);
+    renderDayPlan();
+    // 清空输入
+    document.getElementById(`addName_${meal}`).value = '';
+    document.getElementById(`addKcal_${meal}`).value = '';
+    document.getElementById(`addProt_${meal}`).value = '';
+    document.getElementById(`addCarb_${meal}`).value = '';
+    document.getElementById(`addFat_${meal}`).value  = '';
+    showToast('✅ 已添加');
+  } catch(e) {
+    alert('保存失败：' + e.message);
+  }
+}
+
+// ===== 删除食物 =====
+async function removeFood(id) {
+  try {
+    await deleteMealPlanItem(id);
+    planRows = planRows.filter(r => r.id !== id);
+    grouped = groupMealPlan(planRows);
+    renderDayPlan();
+    showToast('已删除');
+  } catch(e) {
+    alert('删除失败：' + e.message);
+  }
+}
+
+// ===== 保存营养目标 =====
+async function handleSaveGoals() {
+  const fields = {
+    kcal_target:    parseInt(document.getElementById('goalKcal').value) || 0,
+    protein_target: parseInt(document.getElementById('goalProtein').value) || 0,
+    carb_target:    parseInt(document.getElementById('goalCarb').value) || 0,
+    fat_target:     parseInt(document.getElementById('goalFat').value) || 0
+  };
+
+  try {
+    await saveProfile(fields);
+    if (!profile) profile = {};
+    Object.assign(profile, fields);
+    renderDayPlan();
+    showToast('✅ 营养目标已保存');
+  } catch(e) {
+    alert('保存失败：' + e.message);
+  }
+}
+
+</script>
+
+<style>
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.template-card {
+  border: 2px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;
+  cursor: pointer; transition: all .15s; background: #fafafa;
+}
+.template-card:hover { border-color: var(--primary); background: rgba(76,175,130,0.05); transform: translateY(-1px); }
+.template-name { font-size: 14px; font-weight: 700; color: #2d3748; margin-bottom: 4px; }
+.template-desc { font-size: 12px; color: #718096; }
+
+.week-tabs { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; }
+.day-tab {
+  flex: 1; min-width: 60px; padding: 8px 4px; text-align: center;
+  border: 2px solid #e2e8f0; border-radius: 10px; background: #fff;
+  cursor: pointer; transition: all .15s;
+}
+.day-tab:hover { border-color: #cbd5e0; }
+.day-tab.active { border-color: var(--primary); background: rgba(76,175,130,0.08); }
+.day-tab.today .day-tab-label { color: var(--primary); font-weight: 700; }
+.day-tab-label { font-size: 12px; font-weight: 600; color: #4a5568; }
+.day-tab-date { font-size: 11px; color: #a0aec0; margin-top: 2px; }
+
+.day-summary { background: #f8fafc; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+.summary-total { font-size: 14px; color: #2d3748; }
+.summary-bar { margin-top: 8px; height: 6px; background: #edf2f7; border-radius: 3px; overflow: hidden; }
+.summary-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+.meal-section { margin-bottom: 16px; border: 1px solid #edf2f7; border-radius: 10px; overflow: hidden; }
+.meal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: #f7fafc; border-bottom: 1px solid #edf2f7;
+}
+.meal-title { font-size: 14px; font-weight: 700; color: #2d3748; }
+.meal-kcal { font-size: 13px; font-weight: 600; color: var(--primary); }
+.meal-food-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  border-bottom: 1px solid #f7fafc; font-size: 13px;
+}
+.meal-food-item:last-of-type { border-bottom: none; }
+.food-name { flex: 1; color: #2d3748; font-weight: 500; }
+.food-macros { color: #a0aec0; font-size: 11px; min-width: 100px; }
+.food-kcal { color: #718096; font-size: 12px; width: 70px; text-align: right; }
+.btn-icon {
+  background: none; border: none; cursor: pointer;
+  color: #e53e3e; font-size: 14px; opacity: 0.5; transition: opacity .15s; padding: 2px 4px;
+}
+.btn-icon:hover { opacity: 1; }
+.meal-empty { padding: 10px 14px; font-size: 13px; color: #a0aec0; }
+.meal-add-row {
+  display: flex; gap: 6px; padding: 8px 14px; background: #fafbfc;
+  border-top: 1px solid #edf2f7; align-items: center; flex-wrap: wrap;
+}
+.add-food-input {
+  flex: 1; min-width: 60px; padding: 6px 10px; border: 1px solid #e2e8f0;
+  border-radius: 6px; font-size: 13px; color: #2d3748;
+}
+.add-food-input:focus { outline: none; border-color: var(--primary); }
+</style>
+
+</body>
+</html>
